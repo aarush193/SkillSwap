@@ -6,8 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import Link from "next/link";
 import { PlusCircle, Search, Filter, List } from "lucide-react";
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+import { createClient } from "@/lib/supabase-server";
 
 export const metadata: Metadata = {
   title: 'Skill Listings - SkillSwap',
@@ -17,7 +16,7 @@ export const metadata: Metadata = {
 export const revalidate = 0; // Disable cache for this page
 
 async function getListings() {
-  const supabase = createServerComponentClient({ cookies });
+  const supabase = await createClient();
   
   const { data: listings, error } = await supabase
     .from('listings')
@@ -25,7 +24,8 @@ async function getListings() {
     .order('created_at', { ascending: false });
 
   if (error) {
-    console.error('Error fetching listings:', error);
+    console.log("Listings:", listings);
+    console.log("Error:", error);
     return [];
   }
 
@@ -42,11 +42,12 @@ export default async function ListingsPage() {
             <h1 className="text-3xl font-bold tracking-tight text-foreground">Skill Listings</h1>
             <p className="text-muted-foreground">Discover skills offered and requested by the community.</p>
         </div>
-        <Button asChild>
-          <Link href="/listings/create">
-            <PlusCircle className="mr-2 h-4 w-4" /> Create New Listing
-          </Link>
-        </Button>
+        <Link href="/listings/create">
+  <Button>
+    <PlusCircle className="mr-2 h-4 w-4" />
+    Create New Listing
+  </Button>
+  </Link>
       </div>
 
       {/* Filters and Search Section */}
@@ -99,9 +100,11 @@ export default async function ListingsPage() {
           <p className="mt-1 text-muted-foreground">
             Try adjusting your filters or check back later.
           </p>
-          <Button asChild className="mt-6">
-            <Link href="/listings/create">Create a Listing</Link>
-          </Button>
+          <Link href="/listings/create">
+             <Button className="mt-6">
+              Create a Listing
+            </Button>
+          </Link>
         </div>
       )}
     </div>
