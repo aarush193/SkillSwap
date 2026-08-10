@@ -15,11 +15,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import React from "react";
-import { auth } from "@/lib/firebase";
-import { useAuthState } from "react-firebase-hooks/auth";
-import { signOut } from "firebase/auth";
+import React, { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -30,14 +29,29 @@ const navItems = [
 
 export function AppHeader() {
   const pathname = usePathname();
-  const [user] = useAuthState(auth);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
   const router = useRouter();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      await supabase.auth.signOut();
       router.push("/");
+      router.refresh();
     } catch (error) {
       console.error("Error signing out:", error);
     }
@@ -92,15 +106,15 @@ export function AppHeader() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                 <Avatar className="h-9 w-9">
-                  <AvatarImage src={user?.photoURL || undefined} alt={user?.displayName || "User Avatar"} />
-                  <AvatarFallback>{user?.displayName?.substring(0, 2).toUpperCase() || "U"}</AvatarFallback>
+                  <AvatarImage src={user?.user_metadata?.avatar_url || undefined} alt={user?.user_metadata?.full_name || "User Avatar"} />
+                  <AvatarFallback>{(user?.user_metadata?.full_name || user?.email || "User").substring(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="end" forceMount>
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">{user?.displayName || "Anonymous User"}</p>
+                  <p className="text-sm font-medium leading-none">{user?.user_metadata?.full_name || user?.email?.split('@')[0] || "User"}</p>
                   <p className="text-xs leading-none text-muted-foreground">
                     {user?.email || "No email"}
                   </p>

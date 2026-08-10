@@ -1,42 +1,14 @@
 import { supabase } from './supabase';
 import type { UserProfile, Skill } from '@/types/skillswap';
 
-// Helper function to convert Firebase UID to UUID format
-function convertToUUID(firebaseUid: string): string {
-  // If the Firebase UID is already in UUID format, return it
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(firebaseUid)) {
-    return firebaseUid;
-  }
-  
-  // Generate a deterministic UUID based on the Firebase UID
-  // This is a simple hashing approach - in production, consider a more robust method
-  let hash = 0;
-  for (let i = 0; i < firebaseUid.length; i++) {
-    const char = firebaseUid.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  
-  // Create a UUID-like string (this is not a true UUID but will have the right format)
-  const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = (hash + Math.random() * 16) % 16 | 0;
-    hash = Math.floor(hash / 16);
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-  
-  return uuid;
-}
-
 export async function fetchUserProfile(userId: string): Promise<UserProfile | null> {
   try {
-    const supabaseId = convertToUUID(userId);
-    
-    console.log("Fetching profile for user ID:", userId, "Supabase ID:", supabaseId);
+    console.log("Fetching profile for user ID:", userId);
     
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', supabaseId)
+      .eq('id', userId)
       .single();
     
     if (profileError) {
@@ -49,7 +21,7 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
       throw new Error(`Error fetching profile data: ${profileError.message}`);
     }
     
-    // If profileData is null but no error, it means 0 rows were returned with a non-.single() query (not applicable here but good practice)
+    // If profileData is null but no error, it means 0 rows were returned
     if (!profileData) {
       console.log("No profile data returned for user:", userId);
       return null;
@@ -61,7 +33,7 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
     const { data: skillsData, error: skillsError } = await supabase
       .from('skills')
       .select('*')
-      .eq('profile_id', supabaseId);
+      .eq('profile_id', userId);
     
     if (skillsError) {
       console.error('Supabase error fetching skills:', JSON.stringify(skillsError, null, 2));
@@ -69,11 +41,11 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
     }
     
     // Transform database model to our app model
-    const skillsOffered = skillsData
+    const skillsOffered = (skillsData || [])
       .filter(skill => skill.type === 'offered')
       .map(skill => ({ id: skill.id, name: skill.name }));
     
-    const skillsWanted = skillsData
+    const skillsWanted = (skillsData || [])
       .filter(skill => skill.type === 'wanted')
       .map(skill => ({ id: skill.id, name: skill.name }));
     
@@ -81,7 +53,7 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
     const timeBalance = typeof profileData.time_balance === 'number' ? profileData.time_balance : 12;
     
     const userProfile = {
-      id: userId, // Return the original Firebase UID for app use
+      id: userId,
       name: profileData.name,
       email: profileData.email,
       bio: profileData.bio || '',
@@ -96,22 +68,19 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
     console.log("Returning user profile with time balance:", userProfile.timeBalance);
     return userProfile;
   } catch (error: any) {
-    // Ensure we log the original error if it's not from Supabase directly
     const errorMessage = error.message || 'Unknown error during profile fetch';
     console.error('Error fetching user profile:', errorMessage, error);
-    throw new Error(errorMessage); // Re-throw with a consistent message
+    throw new Error(errorMessage);
   }
 }
 
 export async function saveUserProfile(profile: Partial<UserProfile> & { id: string }): Promise<void> {
   try {
-    const supabaseId = convertToUUID(profile.id);
-    
     // First, upsert the profile data
     const { error: profileError } = await supabase
       .from('profiles')
       .upsert({
-        id: supabaseId,
+        id: profile.id,
         name: profile.name,
         email: profile.email,
         bio: profile.bio,
@@ -131,7 +100,7 @@ export async function saveUserProfile(profile: Partial<UserProfile> & { id: stri
       const { error: deleteError } = await supabase
         .from('skills')
         .delete()
-        .eq('profile_id', supabaseId);
+        .eq('profile_id', profile.id);
       
       if (deleteError) throw deleteError;
       
@@ -140,7 +109,7 @@ export async function saveUserProfile(profile: Partial<UserProfile> & { id: stri
       
       if (profile.skillsOffered) {
         const offeredSkills = profile.skillsOffered.map(skill => ({
-          profile_id: supabaseId,
+          profile_id: profile.id,
           name: skill.name,
           type: 'offered',
         }));
@@ -149,7 +118,7 @@ export async function saveUserProfile(profile: Partial<UserProfile> & { id: stri
       
       if (profile.skillsWanted) {
         const wantedSkills = profile.skillsWanted.map(skill => ({
-          profile_id: supabaseId,
+          profile_id: profile.id,
           name: skill.name,
           type: 'wanted',
         }));
@@ -173,10 +142,8 @@ export async function saveUserProfile(profile: Partial<UserProfile> & { id: stri
 
 export async function createUserProfile(userId: string, initialData: Partial<UserProfile>): Promise<void> {
   try {
-    const supabaseId = convertToUUID(userId);
-    
     const profileData = {
-      id: supabaseId,
+      id: userId,
       name: initialData.name || 'Anonymous User',
       email: initialData.email || '',
       bio: initialData.bio || '',
@@ -199,7 +166,7 @@ export async function createUserProfile(userId: string, initialData: Partial<Use
       
     if (initialData.skillsOffered) {
       const offeredSkills = initialData.skillsOffered.map(skill => ({
-        profile_id: supabaseId,
+        profile_id: userId,
         name: skill.name,
         type: 'offered',
       }));
@@ -208,7 +175,7 @@ export async function createUserProfile(userId: string, initialData: Partial<Use
     
     if (initialData.skillsWanted) {
       const wantedSkills = initialData.skillsWanted.map(skill => ({
-        profile_id: supabaseId,
+        profile_id: userId,
         name: skill.name,
         type: 'wanted',
       }));
