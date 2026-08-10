@@ -66,11 +66,11 @@ export function EditProfileDialog({ user, isOpen, onClose, onSave }: EditProfile
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[750px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Edit Your Profile</DialogTitle>
+          <DialogTitle className="text-xl font-bold">Edit Profile & Skills</DialogTitle>
           <DialogDescription>
-            Make changes to your profile information. Click save when you&apos;re done.
+            Update your personal details, bio, availability, and select skills to feature on your profile.
           </DialogDescription>
         </DialogHeader>
         

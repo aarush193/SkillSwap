@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Zap, LayoutDashboard, User, List, Clock, LogOut, Settings, Menu } from "lucide-react";
+import { Zap, LayoutDashboard, User, List, Clock, LogOut, Settings, Menu, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -24,6 +24,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/profile", label: "Profile", icon: User },
   { href: "/listings", label: "Listings", icon: List },
+  { href: "/messages", label: "Messages", icon: MessageSquare },
   { href: "/timebank", label: "Time Bank", icon: Clock },
 ];
 
@@ -121,6 +122,12 @@ export function AppHeader() {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link href="/messages" className="flex items-center">
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  <span>Messages</span>
+                </Link>
+              </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link href="/profile" className="flex items-center">
                   <User className="mr-2 h-4 w-4" />

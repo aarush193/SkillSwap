@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Card, CardContent, CardDescription as CardDesc, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle } from "lucide-react";
+import { PlusCircle, ArrowLeft } from "lucide-react";
 import { 
   Select, 
   SelectContent, 
@@ -32,9 +32,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "../../lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import { clsx } from "clsx";
-// import { useRouter } from "next/navigation"; // For redirecting after submission
+import Link from "next/link";
 
-// New data structure with subcategories
 const skillsData = [
   {
     name: "Technology",
@@ -59,7 +58,6 @@ const skillsData = [
         { name: "Strategy & Management", skills: ["Business Analysis", "Project Management", "Product Management", "Agile Coaching", "Market Research"]},
     ]
   },
-  // Add more categories and subcategories as needed
 ];
 
 const listingFormSchema = z.object({
@@ -79,10 +77,11 @@ const listingFormSchema = z.object({
 type ListingFormValues = z.infer<typeof listingFormSchema>;
 
 export function CreateListingForm() {
-  // const router = useRouter();
   const { toast } = useToast();
   const form = useForm<ListingFormValues>({
     resolver: zodResolver(listingFormSchema),
+    mode: "onSubmit",
+    reValidateMode: "onSubmit",
     defaultValues: {
       type: "offered",
       title: "",
@@ -106,16 +105,19 @@ export function CreateListingForm() {
     setAvailableSubCategories(category ? category.subCategories : []);
     setSelectedSubCategoryName("");
     setAvailableSkills([]);
-    form.setValue("skillName", []);
-    form.trigger("skillName");
+    form.setValue("category", categoryName, { shouldValidate: false });
+    form.setValue("subCategory", "", { shouldValidate: false });
+    form.setValue("skillName", [], { shouldValidate: false });
+    form.clearErrors();
   };
 
   const handleSubCategoryChange = (subCategoryName: string) => {
     setSelectedSubCategoryName(subCategoryName);
     const subCategory = availableSubCategories.find(sc => sc.name === subCategoryName);
     setAvailableSkills(subCategory ? subCategory.skills : []);
-    form.setValue("skillName", []);
-    form.trigger("skillName");
+    form.setValue("subCategory", subCategoryName, { shouldValidate: false });
+    form.setValue("skillName", [], { shouldValidate: false });
+    form.clearErrors();
   };
 
   async function onSubmit(values: ListingFormValues) {
@@ -162,6 +164,7 @@ export function CreateListingForm() {
         setSelectedSubCategoryName("");
         setAvailableSubCategories([]);
         setAvailableSkills([]);
+        window.location.href = "/listings";
       }
     } catch (error) {
       toast({
@@ -175,13 +178,20 @@ export function CreateListingForm() {
   const currentSelectedSkills = form.watch("skillName") || [];
 
   return (
-    <Card className="w-full max-w-2xl mx-auto shadow-xl">
-      <CardHeader>
-        <CardTitle className="text-2xl font-bold flex items-center gap-2">
-          <PlusCircle className="h-6 w-6 text-primary" /> Create New Skill Listing(s)
-        </CardTitle>
-        <CardDesc>Share your skills or let the community know what you&apos;re looking for. You can select up to 5 skills.</CardDesc>
-      </CardHeader>
+    <div className="space-y-4 max-w-2xl mx-auto">
+      <Button variant="ghost" asChild className="mb-2 text-muted-foreground hover:text-foreground">
+        <Link href="/listings">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Listings
+        </Link>
+      </Button>
+
+      <Card className="w-full shadow-xl">
+        <CardHeader>
+          <CardTitle className="text-2xl font-bold flex items-center gap-2">
+            <PlusCircle className="h-6 w-6 text-primary" /> Create New Skill Listing
+          </CardTitle>
+          <CardDesc>Share your skills or let the community know what you&apos;re looking for. You can select up to 5 skills.</CardDesc>
+        </CardHeader>
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
@@ -230,113 +240,134 @@ export function CreateListingForm() {
               )}
             />
 
-            <FormItem>
-              <FormLabel>Category*</FormLabel>
-              <Select onValueChange={value => { handleCategoryChange(value); form.setValue('category', value); }} value={selectedCategoryName || ""}>
-                <FormControl>
-                  <SelectTrigger suppressHydrationWarning={true}>
-                    <SelectValue placeholder="Select a category" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {skillsData.map((category) => (
-                    <SelectItem key={category.name} value={category.name}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-
-            <FormItem>
-              <FormLabel>Sub-Category*</FormLabel>
-              <Select 
-                onValueChange={value => { handleSubCategoryChange(value); form.setValue('subCategory', value); }}
-                value={selectedSubCategoryName || ""}
-                disabled={!selectedCategoryName || availableSubCategories.length === 0}
-              >
-                <FormControl>
-                  <SelectTrigger suppressHydrationWarning={true}>
-                    <SelectValue placeholder="Select a sub-category" />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {availableSubCategories.map((subCategory) => (
-                    <SelectItem key={subCategory.name} value={subCategory.name}>
-                      {subCategory.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-
             <FormField
               control={form.control}
-              name="skillName"
-              render={() => (
+              name="category"
+              render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Skills* (Select up to 5)</FormLabel>
-                  {availableSkills.length > 0 && (
-                    <FormDescription>
-                      Select the skill(s) you are offering or requesting.
-                    </FormDescription>
-                  )}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                    {availableSkills.map((skill) => (
-                      <FormField
-                        key={skill}
-                        control={form.control}
-                        name="skillName"
-                        render={({ field }) => {
-                          const isChecked = field.value?.includes(skill);
-                          const isDisabled = !isChecked && currentSelectedSkills.length >= 5;
-                          return (
-                            <FormItem 
-                              key={skill + "-item"}
-                              className={clsx(
-                                "flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3",
-                                isDisabled && "opacity-50 cursor-not-allowed"
-                              )}
-                            >
-                              <FormControl>
-                                <Checkbox
-                                  checked={isChecked}
-                                  onCheckedChange={(checked) => {
-                                    if (isDisabled && checked) return;
-                                    const currentSkills = field.value || [];
-                                    return checked
-                                      ? field.onChange([...currentSkills, skill])
-                                      : field.onChange(
-                                          currentSkills.filter(
-                                            (value) => value !== skill
-                                          )
-                                        );
-                                  }}
-                                  disabled={isDisabled}
-                                  aria-describedby={skill + "-desc"}
-                                />
-                              </FormControl>
-                              <FormLabel className={clsx(
-                                "font-normal",
-                                isDisabled ? "cursor-not-allowed" : "cursor-pointer"
-                              )}>
-                                {skill}
-                              </FormLabel>
-                            </FormItem>
-                          );
-                        }}
-                      />
-                    ))}
-                  </div>
-                  {availableSkills.length === 0 && selectedSubCategoryName && (
-                     <p className='text-sm text-muted-foreground pt-2'>No skills listed for this sub-category yet.</p>
-                  )}
+                  <FormLabel>Category*</FormLabel>
+                  <Select 
+                    onValueChange={(val) => {
+                      field.onChange(val);
+                      handleCategoryChange(val);
+                    }} 
+                    value={field.value || ""}
+                  >
+                    <FormControl>
+                      <SelectTrigger suppressHydrationWarning={true}>
+                        <SelectValue placeholder="Select a category" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {skillsData.map((category) => (
+                        <SelectItem key={category.name} value={category.name}>
+                          {category.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
             />
+
+            <FormField
+              control={form.control}
+              name="subCategory"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Sub-Category*</FormLabel>
+                  <Select 
+                    onValueChange={(val) => {
+                      field.onChange(val);
+                      handleSubCategoryChange(val);
+                    }}
+                    value={field.value || ""}
+                    disabled={!selectedCategoryName || availableSubCategories.length === 0}
+                  >
+                    <FormControl>
+                      <SelectTrigger suppressHydrationWarning={true}>
+                        <SelectValue placeholder="Select a sub-category" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {availableSubCategories.map((subCategory) => (
+                        <SelectItem key={subCategory.name} value={subCategory.name}>
+                          {subCategory.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            {form.watch("subCategory") && (
+              <FormField
+                control={form.control}
+                name="skillName"
+                render={() => (
+                  <FormItem>
+                    <FormLabel>Skills* (Select up to 5)</FormLabel>
+                    {availableSkills.length > 0 && (
+                      <FormDescription>
+                        Select the skill(s) you are offering or requesting.
+                      </FormDescription>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                      {availableSkills.map((skill) => (
+                        <FormField
+                          key={skill}
+                          control={form.control}
+                          name="skillName"
+                          render={({ field }) => {
+                            const isChecked = field.value?.includes(skill);
+                            const isDisabled = !isChecked && currentSelectedSkills.length >= 5;
+                            return (
+                              <FormItem 
+                                key={skill + "-item"}
+                                className={clsx(
+                                  "flex flex-row items-start space-x-3 space-y-0 rounded-md border p-3",
+                                  isDisabled && "opacity-50 cursor-not-allowed"
+                                )}
+                              >
+                                <FormControl>
+                                  <Checkbox
+                                    checked={isChecked}
+                                    onCheckedChange={(checked) => {
+                                      if (isDisabled && checked) return;
+                                      const currentSkills = field.value || [];
+                                      const nextSkills = checked
+                                        ? [...currentSkills, skill]
+                                        : currentSkills.filter((value) => value !== skill);
+                                      field.onChange(nextSkills);
+                                      form.setValue("skillName", nextSkills, { shouldValidate: true });
+                                    }}
+                                    disabled={isDisabled}
+                                    aria-describedby={skill + "-desc"}
+                                  />
+                                </FormControl>
+                                <FormLabel className={clsx(
+                                  "font-normal",
+                                  isDisabled ? "cursor-not-allowed" : "cursor-pointer"
+                                )}>
+                                  {skill}
+                                </FormLabel>
+                              </FormItem>
+                            );
+                          }}
+                        />
+                      ))}
+                    </div>
+                    {availableSkills.length === 0 && (
+                       <p className='text-sm text-muted-foreground pt-2'>No skills listed for this sub-category yet.</p>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             
             <FormField
               control={form.control}
@@ -374,7 +405,7 @@ export function CreateListingForm() {
             <Button 
               type="submit" 
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
-              disabled={form.formState.isSubmitting || !form.formState.isValid || currentSelectedSkills.length === 0}
+              disabled={form.formState.isSubmitting || currentSelectedSkills.length === 0}
             >
               <PlusCircle className="mr-2 h-4 w-4" /> 
               {form.formState.isSubmitting ? "Creating..." : (
@@ -389,5 +420,6 @@ export function CreateListingForm() {
         </Form>
       </CardContent>
     </Card>
+  </div>
   );
 }

@@ -40,24 +40,30 @@ export default function DashboardPage() {
     };
   }, []);
 
+  const [activeListingsCount, setActiveListingsCount] = useState<number>(0);
+
   useEffect(() => {
     if (user) {
       setProfileLoading(true);
 
-      // First update any zero balances in the database
-      updateAllZeroBalancesToDefault()
-        .then(() => {
-          console.log("Zero time balances have been updated to 12 hours");
-          // Then fetch the user profile
-          return fetchUserProfile(user.id);
-        })
-        .then((data) => {
-          console.log("Dashboard fetched profile:", data);
-          setProfile(data);
+      // Fetch user profile and user's active listings count in parallel
+      Promise.all([
+        updateAllZeroBalancesToDefault()
+          .then(() => fetchUserProfile(user.id)),
+        supabase
+          .from("listings")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", user.id)
+      ])
+        .then(([profileData, listingsRes]) => {
+          setProfile(profileData);
+          if (listingsRes.count !== null) {
+            setActiveListingsCount(listingsRes.count);
+          }
           setProfileLoading(false);
         })
         .catch(err => {
-          console.error("Error in profile update/fetch process:", err);
+          console.error("Error loading dashboard data:", err);
           setProfileError(err);
           setProfileLoading(false);
         });
@@ -84,7 +90,7 @@ export default function DashboardPage() {
   if (profileLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <span className="text-lg">Loading...</span>
+        <span className="text-lg">Loading your dashboard...</span>
       </div>
     );
   }
@@ -114,7 +120,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Quick Stats Section */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2">
         <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Current Time Balance</CardTitle>
@@ -122,10 +128,10 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-primary">
-              {profile ? profile.timeBalance.toFixed(1) : '0.0'} hours
+              {profile?.timeBalance !== undefined ? profile.timeBalance.toFixed(1) : '0.0'} hours
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Your available time credits for skill exchanges.
+              Your live time credit balance from your profile.
             </p>
             {profile?.timeAvailable && (
               <div className="mt-2">
@@ -133,35 +139,30 @@ export default function DashboardPage() {
                 <p className="text-sm text-muted-foreground">{profile.timeAvailable}</p>
               </div>
             )}
-            <div className="mt-2 text-xs text-muted-foreground">
-              <p>• Use these hours to exchange skills</p>
-              <p>• Earn hours by teaching others</p>
-              <p>• Spend hours to learn new skills</p>
+            <div className="mt-3 text-xs text-muted-foreground space-y-0.5">
+              <p>• Use these hours to request skills</p>
+              <p>• Earn hours by offering your expertise</p>
             </div>
           </CardContent>
         </Card>
+
         <Card className="shadow-lg">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Listings</CardTitle>
+            <CardTitle className="text-sm font-medium">My Active Listings</CardTitle>
             <List className="h-5 w-5 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">5</div> {/* Replace with dynamic data */}
+            <div className="text-3xl font-bold text-foreground">
+              {activeListingsCount}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Skills you are offering or requesting.
+              Skills you are actively offering or requesting in the community.
             </p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-lg">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Exchanges</CardTitle>
-            <Activity className="h-5 w-5 text-primary" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold">0</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              Open skill exchanges requiring action.
-            </p>
+            <div className="mt-4">
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/listings">View My Listings</Link>
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>

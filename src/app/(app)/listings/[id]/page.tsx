@@ -1,174 +1,513 @@
-import type { Metadata } from 'next';
+"use client";
+
+import { useEffect, useState, use } from "react";
 import type { Listing, UserProfile } from "@/types/skillswap";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Briefcase, CalendarDays, Clock, Mail, MessageSquare, User, Tag, Info } from "lucide-react";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogDescription, 
+  DialogFooter, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger 
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { CalendarDays, Clock, Mail, MessageSquare, Tag, Info, ArrowLeft, Loader2, Sparkles, HelpCircle, Repeat } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
-import { format } from 'date-fns';
+import { format } from "date-fns";
+import { supabase } from "@/lib/supabase";
+import { fetchUserProfile } from "@/lib/profile-service";
+import { useToast } from "@/hooks/use-toast";
 
-// This would typically be a server component fetching data based on params.id
-// For now, it's a client component with mock data for structure.
+export default function ListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params);
+  const listingId = resolvedParams.id;
+  const { toast } = useToast();
 
-// Mock data - replace with actual data fetching
-const getMockListing = (id: string): Listing | null => {
-  if (id === "1") {
-    return {
-      id: "1",
-      userId: "user1",
-      userName: "Alice Wonderland",
-      userAvatarUrl: "https://picsum.photos/seed/alice/100/100",
-      type: "offer",
-      skill: { id: "s1", name: "Advanced JavaScript Tutoring", category: "Tech" },
-      description: "Offering in-depth JavaScript tutoring, covering ES6+, async/await, and functional programming concepts. Suitable for intermediate to advanced learners. I have 5 years of experience building complex web applications and enjoy helping others level up their skills. We can tailor sessions to your specific needs, whether it's project-based help or concept clarification.",
-      tags: ["JavaScript", "Tutoring", "Web Development", "ES6", "React", "Node.js"],
-      createdAt: new Date(Date.now() - 86400000 * 2), // 2 days ago
-      status: "open",
-    };
+  const [listing, setListing] = useState<Listing | null>(null);
+  const [listerProfile, setListerProfile] = useState<UserProfile | null>(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Proposal modal state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [offeredSkill, setOfferedSkill] = useState("");
+  const [proposedHours, setProposedHours] = useState("1");
+  const [proposalMessage, setProposalMessage] = useState("");
+  const [submittingProposal, setSubmittingProposal] = useState(false);
+
+  // Direct Message modal state
+  const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+  const [directMessageText, setDirectMessageText] = useState("");
+  const [submittingMessage, setSubmittingMessage] = useState(false);
+
+  useEffect(() => {
+    async function loadData() {
+      setLoading(true);
+      try {
+        const { data: listingData, error } = await supabase
+          .from("listings")
+          .select("*")
+          .eq("id", listingId)
+          .single();
+
+        if (error || !listingData) {
+          console.error("Error fetching listing:", error);
+          setListing(null);
+        } else {
+          setListing(listingData);
+
+          if (listingData.user_id) {
+            const profile = await fetchUserProfile(listingData.user_id);
+            setListerProfile(profile);
+          }
+        }
+
+        // Fetch current logged-in user profile
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const profile = await fetchUserProfile(user.id);
+          setCurrentUserProfile(profile);
+        }
+      } catch (err) {
+        console.error("Error in ListingDetailPage:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    if (listingId) {
+      loadData();
+    }
+  }, [listingId]);
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingMessage(true);
+
+    try {
+      const { data: { user }, error: userErr } = await supabase.auth.getUser();
+
+      if (userErr || !user) {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to send messages.",
+          variant: "destructive",
+        });
+        setSubmittingMessage(false);
+        return;
+      }
+
+      const senderId = user.id;
+      const senderName = user.user_metadata?.full_name || currentUserProfile?.name || user.email || "Community Member";
+      const receiverId = listing?.user_id;
+
+      if (!receiverId) {
+        toast({
+          title: "Recipient Error",
+          description: "Could not resolve the listing author.",
+          variant: "destructive",
+        });
+        setSubmittingMessage(false);
+        return;
+      }
+
+      const messageData = {
+        listing_id: listingId,
+        sender_id: senderId,
+        sender_name: senderName,
+        receiver_id: receiverId,
+        message: directMessageText,
+        type: "direct_message",
+        status: "sent",
+        created_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from("transactions").insert([messageData]);
+
+      if (error) {
+        console.error("Error sending message:", JSON.stringify(error, null, 2));
+        toast({
+          title: "Message Failed",
+          description: error.message || error.details || "Could not send in-app message. Check database schema.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Message Sent!",
+          description: `Your message was delivered to ${listing?.user_name || "the lister"}.`,
+        });
+        setIsMessageModalOpen(false);
+        setDirectMessageText("");
+      }
+    } catch (err: any) {
+      console.error("Message error:", err);
+      toast({
+        title: "Error Sending Message",
+        description: err.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingMessage(false);
+    }
+  };
+
+  const handleSendProposal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmittingProposal(true);
+
+    try {
+      const { data: { user }, error: userErr } = await supabase.auth.getUser();
+
+      if (userErr || !user) {
+        toast({
+          title: "Authentication Required",
+          description: "Please sign in to propose a skill exchange.",
+          variant: "destructive",
+        });
+        setSubmittingProposal(false);
+        return;
+      }
+
+      const senderId = user.id;
+      const senderName = user.user_metadata?.full_name || currentUserProfile?.name || user.email || "Community Member";
+      const receiverId = listing?.user_id;
+
+      if (!receiverId) {
+        toast({
+          title: "Recipient Error",
+          description: "Could not resolve the listing author.",
+          variant: "destructive",
+        });
+        setSubmittingProposal(false);
+        return;
+      }
+
+      const proposalData = {
+        listing_id: listingId,
+        sender_id: senderId,
+        sender_name: senderName,
+        receiver_id: receiverId,
+        offered_skill: offeredSkill,
+        proposed_hours: parseFloat(proposedHours) || 1,
+        message: proposalMessage,
+        type: "proposal",
+        status: "pending",
+        created_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase.from("transactions").insert([proposalData]);
+
+      if (error) {
+        console.error("Error sending proposal:", JSON.stringify(error, null, 2));
+        toast({
+          title: "Proposal Failed",
+          description: error.message || error.details || "Could not send proposal. Check database schema.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Proposal Sent!",
+          description: `Your skill exchange proposal was sent to ${listing?.user_name || "the lister"}.`,
+        });
+        setIsModalOpen(false);
+        setOfferedSkill("");
+        setProposedHours("1");
+        setProposalMessage("");
+      }
+    } catch (err: any) {
+      console.error("Proposal error:", err);
+      toast({
+        title: "Error Sending Proposal",
+        description: err.message || "An unexpected error occurred.",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmittingProposal(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-muted-foreground font-medium">Loading listing details...</p>
+      </div>
+    );
   }
-  return null;
-};
-
-const mockListerProfile: Partial<UserProfile> = {
-    id: "user1",
-    name: "Alice Wonderland",
-    email: "alice@example.com",
-    avatarUrl: "https://picsum.photos/seed/alice/100/100",
-    bio: "Full-stack developer with a passion for teaching and open source.",
-    timeAvailable: "Mon-Fri evenings",
-    skillsOffered: [{ id: "s1", name: "Advanced JavaScript Tutoring", category: "Tech" }, {id: "s_other", name: "Python Basics", category: "Tech"}]
-};
-
-// Function to generate metadata dynamically (if it were a server component)
-// export async function generateMetadata({ params }: { params: { id: string } }): Promise<Metadata> {
-//   const listing = await getMockListing(params.id); // Replace with actual data fetch
-//   if (!listing) {
-//     return { title: 'Listing Not Found - SkillSwap' };
-//   }
-//   return {
-//     title: `${listing.skill.name} by ${listing.userName} - SkillSwap`,
-//     description: listing.description.substring(0, 160),
-//   };
-// }
-// For client component, metadata needs to be defined statically or use a different approach.
-// For this exercise, we'll set a generic title.
-export const metadata: Metadata = {
-    title: 'Listing Details - SkillSwap',
-};
-
-
-export default function ListingDetailPage({ params }: { params: { id: string } }) {
-  const listing = getMockListing(params.id); // In real app, fetch data using params.id
-  const listerProfile = mockListerProfile; // Fetch lister's profile too
 
   if (!listing) {
     return (
-      <div className="container mx-auto py-12 text-center">
-        <h1 className="text-2xl font-semibold">Listing Not Found</h1>
-        <p className="text-muted-foreground mt-2">The listing you are looking for does not exist or has been removed.</p>
-        <Button asChild className="mt-6">
-          <Link href="/listings">Back to Listings</Link>
+      <div className="max-w-xl mx-auto py-16 text-center space-y-4">
+        <h1 className="text-2xl font-bold text-foreground">Listing Not Found</h1>
+        <p className="text-muted-foreground">The skill listing you are looking for does not exist or has been removed.</p>
+        <Button asChild className="mt-4">
+          <Link href="/listings">
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Listings
+          </Link>
         </Button>
       </div>
     );
   }
 
+  const isOffered = listing.type === "offered" || listing.type === "offer";
+  const skillTags = [...(listing.skill_names || []), ...(listing.tags || [])];
+
   return (
-    <div className="container mx-auto py-8 px-4 md:px-6">
+    <div className="container mx-auto py-8 px-4 md:px-6 space-y-6">
+      <Button variant="ghost" asChild className="text-muted-foreground hover:text-foreground">
+        <Link href="/listings">
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back to Listings
+        </Link>
+      </Button>
+
       <div className="grid lg:grid-cols-3 gap-8">
-        {/* Main Listing Content */}
+        {/* Main Listing Details */}
         <div className="lg:col-span-2 space-y-6">
-          <Card className="shadow-xl overflow-hidden">
-             <div className="relative h-64 w-full bg-secondary">
-                <Image 
-                    src={`https://picsum.photos/seed/${listing.skill.name}/800/300`}
-                    alt={listing.skill.name}
-                    layout="fill"
-                    objectFit="cover"
-                    data-ai-hint="skill abstract"
-                 />
-                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent p-6 flex flex-col justify-end">
-                    <Badge variant={listing.type === "offer" ? "default" : "accent"} className="mb-2 capitalize w-fit text-sm px-3 py-1">
-                        {listing.type === "offer" ? "Offering Skill" : "Requesting Skill"}
-                    </Badge>
-                    <h1 className="text-3xl md:text-4xl font-bold text-white shadow-text">{listing.skill.name}</h1>
-                    {listing.skill.category && (
-                        <p className="text-lg text-primary-foreground/80 mt-1">{listing.skill.category}</p>
-                    )}
-                 </div>
-             </div>
+          <Card className="shadow-xl overflow-hidden border border-border/60">
+            <CardHeader className="bg-muted/30 border-b pb-6 space-y-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge
+                  variant="outline"
+                  className={
+                    isOffered
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 px-3 py-1 font-medium text-xs"
+                      : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30 px-3 py-1 font-medium text-xs"
+                  }
+                >
+                  {isOffered ? (
+                    <span className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" /> Offering Skill</span>
+                  ) : (
+                    <span className="flex items-center gap-1.5"><HelpCircle className="h-3.5 w-3.5" /> Requesting Skill</span>
+                  )}
+                </Badge>
+                {listing.category && (
+                  <Badge variant="secondary" className="text-xs">{listing.category}</Badge>
+                )}
+                {listing.sub_category && (
+                  <Badge variant="outline" className="text-xs">{listing.sub_category}</Badge>
+                )}
+              </div>
+
+              <CardTitle className="text-2xl md:text-3xl font-bold leading-tight">{listing.title}</CardTitle>
+            </CardHeader>
 
             <CardContent className="p-6 space-y-6">
               <div>
-                <h2 className="text-xl font-semibold mb-2 flex items-center"><Info className="mr-2 h-5 w-5 text-primary"/>Description</h2>
-                <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">{listing.description}</p>
+                <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
+                  <Info className="h-5 w-5 text-primary" /> Description
+                </h2>
+                <p className="text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                  {listing.description || "No description provided."}
+                </p>
               </div>
 
-              {listing.tags && listing.tags.length > 0 && (
+              {skillTags.length > 0 && (
                 <div>
-                  <h3 className="text-lg font-semibold mb-2 flex items-center"><Tag className="mr-2 h-5 w-5 text-primary"/>Tags</h3>
+                  <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-2">
+                    <Tag className="h-4 w-4 text-primary" /> Skills & Tags
+                  </h3>
                   <div className="flex flex-wrap gap-2">
-                    {listing.tags.map((tag) => (
-                      <Badge key={tag} variant="secondary" className="text-sm">{tag}</Badge>
+                    {skillTags.map((tag, idx) => (
+                      <Badge key={`${tag}-${idx}`} variant="secondary" className="text-xs px-2.5 py-1">
+                        {tag}
+                      </Badge>
                     ))}
                   </div>
                 </div>
               )}
-              
-              <div className="border-t pt-4">
-                 <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                    <CalendarDays className="h-4 w-4" /> Posted on: {format(new Date(listing.createdAt), "PPP")}
-                 </p>
-                 <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-1">
-                    <Clock className="h-4 w-4" /> Status: <Badge variant={listing.status === "open" ? "outline" : "destructive"} className="capitalize ml-1">{listing.status}</Badge>
-                 </p>
-              </div>
 
+              <div className="border-t pt-4 flex flex-wrap items-center justify-between gap-4 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <CalendarDays className="h-4 w-4" /> 
+                  Posted: {listing.created_at ? format(new Date(listing.created_at), "PPP") : "Recently"}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Clock className="h-4 w-4" /> 
+                  Status: <Badge variant="outline" className="capitalize ml-1 text-xs">{listing.status || "Open"}</Badge>
+                </span>
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Sidebar with Lister Info and Actions */}
+        {/* Lister Sidebar Info & Actions */}
         <div className="lg:col-span-1 space-y-6">
-          <Card className="shadow-xl">
-            <CardHeader className="text-center">
-              <Avatar className="mx-auto h-24 w-24 mb-3 border-4 border-primary/50">
-                <AvatarImage src={listerProfile.avatarUrl} alt={listerProfile.name} data-ai-hint="user avatar" />
-                <AvatarFallback className="text-3xl">{listerProfile.name?.substring(0,1)}</AvatarFallback>
+          <Card className="shadow-xl border border-border/60">
+            <CardHeader className="text-center pb-3">
+              <Avatar className="mx-auto h-20 w-20 mb-3 border-2 border-primary/40 shadow-sm">
+                <AvatarImage src={listing.user_avatar_url || listerProfile?.avatarUrl || `https://picsum.photos/seed/${listing.user_id || listing.user_name}/100/100`} alt={listing.user_name} />
+                <AvatarFallback className="text-xl font-bold">{(listing.user_name || "U").substring(0, 2).toUpperCase()}</AvatarFallback>
               </Avatar>
-              <CardTitle className="text-2xl">{listerProfile.name}</CardTitle>
-              <CardDescription className="text-primary hover:underline">
-                  <Link href={`/profile/${listerProfile.id}`}>View Profile</Link>
-              </CardDescription>
+              <CardTitle className="text-xl font-bold">{listing.user_name || "Community Member"}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-               {listerProfile.bio && <p className="text-sm text-muted-foreground text-center italic line-clamp-3">"{listerProfile.bio}"</p>}
-               <Separator />
-                <div className="text-sm space-y-1">
-                    <p className="flex items-center gap-2"><Mail className="h-4 w-4 text-primary"/> {listerProfile.email}</p>
-                    <p className="flex items-center gap-2"><Clock className="h-4 w-4 text-primary"/> Availability: {listerProfile.timeAvailable || "Not specified"}</p>
-                </div>
-                {listerProfile.skillsOffered && listerProfile.skillsOffered?.length > 0 && (
-                    <>
-                    <Separator />
-                    <div>
-                        <h4 className="font-medium mb-1 text-sm text-muted-foreground">Other skills by {listerProfile.name}:</h4>
-                        <div className="flex flex-wrap gap-1.5">
-                        {listerProfile.skillsOffered.slice(0,3).map(skill => (
-                            <Badge key={skill.id} variant="outline" className="text-xs">{skill.name}</Badge>
-                        ))}
-                        </div>
-                    </div>
-                    </>
+
+            <CardContent className="space-y-4 text-sm">
+              {listerProfile?.bio && (
+                <p className="text-xs text-muted-foreground text-center italic leading-relaxed">&quot;{listerProfile.bio}&quot;</p>
+              )}
+
+              <hr className="border-border/60" />
+
+              <div className="space-y-2 text-xs text-muted-foreground">
+                {listerProfile?.email && (
+                  <p className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-primary shrink-0" /> {listerProfile.email}
+                  </p>
                 )}
+                <p className="flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-primary shrink-0" /> Availability: {listerProfile?.timeAvailable || "Not specified"}
+                </p>
+              </div>
+
+              {listerProfile?.skillsOffered && listerProfile.skillsOffered.length > 0 && (
+                <>
+                  <hr className="border-border/60" />
+                  <div>
+                    <h4 className="font-semibold text-xs text-muted-foreground uppercase tracking-wider mb-2">Offered Skills:</h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {listerProfile.skillsOffered.slice(0, 4).map((skill) => (
+                        <Badge key={skill.id} variant="outline" className="text-xs font-normal">
+                          {skill.name}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </CardContent>
-            <CardFooter className="flex flex-col gap-2">
-              <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
-                <MessageSquare className="mr-2 h-4 w-4" /> Contact {listing.userName}
-              </Button>
-              {/* Add other actions like "Propose Exchange" */}
+
+            {/* Option 3: Dual Action Buttons */}
+            <CardFooter className="flex flex-col gap-3 pt-0 pb-6 px-6">
+              {/* Action 1: Propose Skill Exchange (Modal) */}
+              <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                <DialogTrigger asChild>
+                  <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-md">
+                    <Repeat className="mr-2 h-4 w-4" /> Propose Skill Exchange
+                  </Button>
+                </DialogTrigger>
+
+                <DialogContent className="sm:max-w-md">
+                  <form onSubmit={handleSendProposal}>
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <Repeat className="h-5 w-5 text-primary" /> Propose Exchange with {listing.user_name}
+                      </DialogTitle>
+                      <DialogDescription>
+                        Trade time credits for &quot;{listing.title}&quot;.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="offeredSkill">Skill You Offer in Return*</Label>
+                        <Input
+                          id="offeredSkill"
+                          placeholder="e.g., Python Basics, Graphic Design"
+                          value={offeredSkill}
+                          onChange={(e) => setOfferedSkill(e.target.value)}
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="proposedHours">Hours Proposed*</Label>
+                        <Input
+                          id="proposedHours"
+                          type="number"
+                          min="0.5"
+                          step="0.5"
+                          placeholder="1.0"
+                          value={proposedHours}
+                          onChange={(e) => setProposedHours(e.target.value)}
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label htmlFor="proposalMessage">Note to Lister (Optional)</Label>
+                        <Textarea
+                          id="proposalMessage"
+                          placeholder="Hi! I'd love to exchange skills. Let me know if you're available..."
+                          value={proposalMessage}
+                          onChange={(e) => setProposalMessage(e.target.value)}
+                          className="min-h-[90px]"
+                        />
+                      </div>
+                    </div>
+
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={submittingProposal}>
+                        {submittingProposal ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...
+                          </>
+                        ) : (
+                          "Send Exchange Proposal"
+                        )}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+
+              {/* Action 2: In-App Direct Message */}
+              <Dialog open={isMessageModalOpen} onOpenChange={setIsMessageModalOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" className="w-full border-border/80">
+                    <MessageSquare className="mr-2 h-4 w-4 text-muted-foreground" /> Send Direct Message
+                  </Button>
+                </DialogTrigger>
+
+                <DialogContent className="sm:max-w-md">
+                  <form onSubmit={handleSendMessage}>
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2">
+                        <MessageSquare className="h-5 w-5 text-primary" /> Message {listing.user_name}
+                      </DialogTitle>
+                      <DialogDescription>
+                        Send an in-app message regarding &quot;{listing.title}&quot;.
+                      </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="py-4">
+                      <Label htmlFor="directMessage">Your Message*</Label>
+                      <Textarea
+                        id="directMessage"
+                        placeholder={`Hi ${listing.user_name || "there"}, I saw your listing for ${listing.title} and wanted to reach out...`}
+                        value={directMessageText}
+                        onChange={(e) => setDirectMessageText(e.target.value)}
+                        required
+                        className="min-h-[120px] mt-1.5"
+                      />
+                    </div>
+
+                    <DialogFooter>
+                      <Button type="button" variant="outline" onClick={() => setIsMessageModalOpen(false)}>
+                        Cancel
+                      </Button>
+                      <Button type="submit" disabled={submittingMessage}>
+                        {submittingMessage ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...
+                          </>
+                        ) : (
+                          "Send Message"
+                        )}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </CardFooter>
           </Card>
         </div>
@@ -176,4 +515,5 @@ export default function ListingDetailPage({ params }: { params: { id: string } }
     </div>
   );
 }
-const Separator = () => <hr className="my-3 border-border" />;
+
+

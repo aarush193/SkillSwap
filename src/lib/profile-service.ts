@@ -43,11 +43,11 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
     // Transform database model to our app model
     const skillsOffered = (skillsData || [])
       .filter(skill => skill.type === 'offered')
-      .map(skill => ({ id: skill.id, name: skill.name }));
+      .map(skill => ({ id: skill.id, name: skill.name, category: skill.category || 'General' }));
     
     const skillsWanted = (skillsData || [])
       .filter(skill => skill.type === 'wanted')
-      .map(skill => ({ id: skill.id, name: skill.name }));
+      .map(skill => ({ id: skill.id, name: skill.name, category: skill.category || 'General' }));
     
     // Ensure timeBalance is a number and has a default value of 12 if it's null/undefined/0
     const timeBalance = typeof profileData.time_balance === 'number' ? profileData.time_balance : 12;
@@ -111,6 +111,7 @@ export async function saveUserProfile(profile: Partial<UserProfile> & { id: stri
         const offeredSkills = profile.skillsOffered.map(skill => ({
           profile_id: profile.id,
           name: skill.name,
+          category: skill.category || 'General',
           type: 'offered',
         }));
         skillsToInsert.push(...offeredSkills);
@@ -120,6 +121,7 @@ export async function saveUserProfile(profile: Partial<UserProfile> & { id: stri
         const wantedSkills = profile.skillsWanted.map(skill => ({
           profile_id: profile.id,
           name: skill.name,
+          category: skill.category || 'General',
           type: 'wanted',
         }));
         skillsToInsert.push(...wantedSkills);

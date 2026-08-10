@@ -16,13 +16,75 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Upload, CheckCircle2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
+import { Loader2, CheckCircle2, Star, BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
-// Helper to generate simple unique IDs for new skills
+// Predefined restricted Skill Taxonomy
+const SKILL_TAXONOMY: { category: string; skills: string[] }[] = [
+  {
+    category: "Technology",
+    skills: [
+      "Frontend (React / Next.js)",
+      "Backend (Node.js / Express)",
+      "Python & Django",
+      "Mobile App Dev (React Native / Flutter)",
+      "Data Science & AI",
+      "DevOps & AWS Cloud",
+      "Web Security",
+      "Database Admin (PostgreSQL / SQL)",
+      "UI/UX Design",
+    ],
+  },
+  {
+    category: "Creative & Media",
+    skills: [
+      "Graphic Design & Branding",
+      "Video Editing & Premiere",
+      "3D Modeling & Animation",
+      "Photography & Retouching",
+      "Music Production & Audio",
+      "Content Writing & Copywriting",
+    ],
+  },
+  {
+    category: "Business & Marketing",
+    skills: [
+      "SEO & Search Marketing",
+      "Social Media Marketing",
+      "Project Management (Agile)",
+      "Business Strategy & Analytics",
+      "Product Management",
+      "Sales & Lead Generation",
+    ],
+  },
+  {
+    category: "Languages & Academics",
+    skills: [
+      "English Fluency / Writing",
+      "Spanish Conversation",
+      "French Language",
+      "Mathematics & Calculus",
+      "Physics & Engineering",
+      "Public Speaking",
+    ],
+  },
+  {
+    category: "Lifestyle & Fitness",
+    skills: [
+      "Yoga & Mindfulness",
+      "Personal Fitness Training",
+      "Guitar / Piano Instruction",
+      "Cooking & Culinary Arts",
+      "Gardening & Plant Care",
+    ],
+  },
+];
+
 const generateSkillId = () => `skill_${Math.random().toString(36).substr(2, 9)}`;
 
 const profileFormSchema = z.object({
@@ -33,9 +95,7 @@ const profileFormSchema = z.object({
     .url({ message: "Please enter a valid image URL" })
     .optional()
     .nullable()
-    .or(z.literal("")),  // Allow empty string
-  skillsOfferedStr: z.string().optional().default(""),
-  skillsWantedStr: z.string().optional().default(""),
+    .or(z.literal("")),
   timeAvailable: z.string().optional().default(""),
 });
 
@@ -54,9 +114,10 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploadMethod, setUploadMethod] = useState<"url" | "file">("url");
 
-  // Convert skills arrays to comma-separated strings for form
-  const skillsOfferedStr = user.skillsOffered.map(s => s.name).join(", ");
-  const skillsWantedStr = user.skillsWanted.map(s => s.name).join(", ");
+  // State for restricted skills (offered vs wanted)
+  const [skillsOffered, setSkillsOffered] = useState<Skill[]>(user.skillsOffered || []);
+  const [skillsWanted, setSkillsWanted] = useState<Skill[]>(user.skillsWanted || []);
+  const [expandedCategory, setExpandedCategory] = useState<string>("Technology");
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
@@ -64,13 +125,32 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
       name: user.name,
       bio: user.bio || "",
       backgroundImageUrl: user.backgroundImageUrl || "",
-      skillsOfferedStr,
-      skillsWantedStr,
       timeAvailable: user.timeAvailable || "",
     },
   });
 
-  // Handle file selection
+  const toggleSkillOffered = (skillName: string, category: string) => {
+    setSkillsOffered((prev) => {
+      const exists = prev.some((s) => s.name === skillName);
+      if (exists) {
+        return prev.filter((s) => s.name !== skillName);
+      } else {
+        return [...prev, { id: generateSkillId(), name: skillName, category }];
+      }
+    });
+  };
+
+  const toggleSkillWanted = (skillName: string, category: string) => {
+    setSkillsWanted((prev) => {
+      const exists = prev.some((s) => s.name === skillName);
+      if (exists) {
+        return prev.filter((s) => s.name !== skillName);
+      } else {
+        return [...prev, { id: generateSkillId(), name: skillName, category }];
+      }
+    });
+  };
+
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -80,7 +160,6 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
     }
   };
 
-  // Cleanup preview URL on unmount
   useEffect(() => {
     return () => {
       if (previewUrl) {
@@ -90,73 +169,38 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
   }, [previewUrl]);
 
   async function onSubmit(values: ProfileFormValues) {
-    const skillsOfferedArray: Skill[] = values.skillsOfferedStr
-      ? values.skillsOfferedStr.split(",").map(name => name.trim()).filter(Boolean).map(name => ({ id: generateSkillId(), name }))
-      : [];
-    const skillsWantedArray: Skill[] = values.skillsWantedStr
-      ? values.skillsWantedStr.split(",").map(name => name.trim()).filter(Boolean).map(name => ({ id: generateSkillId(), name }))
-      : [];
-
-    let finalBackgroundImageUrl: string | undefined;
-    
-    if (uploadMethod === "url") {
-      finalBackgroundImageUrl = values.backgroundImageUrl || undefined;
-    } else if (uploadMethod === "file" && selectedFile) {
-      // TODO: Implement actual file upload to Supabase Storage here
-      // For now, we are not saving the uploaded file, only the URL if provided
-      console.warn("File upload selected, but actual upload logic to Supabase Storage is not implemented. Background image will not be saved from file.");
-      // Example of what you would do:
-      // try {
-      //   const permanentUrl = await uploadFileToSupabaseStorage(selectedFile);
-      //   finalBackgroundImageUrl = permanentUrl;
-      // } catch (uploadError) {
-      //   console.error("File upload failed:", uploadError);
-      //   // Potentially show a toast to the user
-      //   finalBackgroundImageUrl = user.backgroundImageUrl; // Revert to original or undefined
-      // }
-      finalBackgroundImageUrl = undefined; // Placeholder: clear or keep old one user.backgroundImageUrl
-    } else {
-      // No URL provided and no file selected, or file selected but upload method not 'file'
-      finalBackgroundImageUrl = values.backgroundImageUrl || user.backgroundImageUrl || undefined; // Keep existing if no new URL/file action
-    }
+    let finalBackgroundImageUrl: string | undefined = values.backgroundImageUrl || user.backgroundImageUrl || undefined;
 
     const updatedProfileData: Partial<UserProfile> = {
       name: values.name,
       bio: values.bio,
-      backgroundImageUrl: finalBackgroundImageUrl, // Use the processed URL
-      skillsOffered: skillsOfferedArray,
-      skillsWanted: skillsWantedArray,
+      backgroundImageUrl: finalBackgroundImageUrl,
+      skillsOffered,
+      skillsWanted,
       timeAvailable: values.timeAvailable,
     };
-    await onSave(updatedProfileData); // Marked await
+    await onSave(updatedProfileData);
   }
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
         <div className="space-y-4">
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-                <FormLabel className="cursor-pointer">Name</FormLabel>
-              <FormControl>
-                  <Input 
-                    {...field} 
-                    disabled={isSaving}
-                    className={cn(
-                      "cursor-text",
-                      isSaving && "cursor-not-allowed opacity-50"
-                    )}
-                  />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Full Name</FormLabel>
+                <FormControl>
+                  <Input {...field} disabled={isSaving} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-          <div className="space-y-4">
+          <div className="space-y-2">
             <h3 className="text-sm font-medium">Background Image</h3>
             <Tabs defaultValue="url" onValueChange={(v) => setUploadMethod(v as "url" | "file")}>
               <TabsList className="grid w-full grid-cols-2">
@@ -170,15 +214,11 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
                   render={({ field }) => (
                     <FormItem>
                       <FormControl>
-                        <Input 
-                          placeholder="Enter image URL" 
+                        <Input
+                          placeholder="Enter image URL"
                           {...field}
                           value={field.value ?? ""}
                           disabled={isSaving}
-                          className={cn(
-                            "cursor-text",
-                            isSaving && "cursor-not-allowed opacity-50"
-                          )}
                         />
                       </FormControl>
                       <FormMessage />
@@ -188,23 +228,10 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
               </TabsContent>
               <TabsContent value="file">
                 <div className="space-y-4">
-                  <Input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    disabled={isSaving}
-                    className={cn(
-                      isSaving && "cursor-not-allowed opacity-50"
-                    )}
-                  />
+                  <Input type="file" accept="image/*" onChange={handleFileChange} disabled={isSaving} />
                   {previewUrl && (
                     <div className="relative h-32 w-full overflow-hidden rounded-lg">
-                      <Image
-                        src={previewUrl}
-                        alt="Background preview"
-                        layout="fill"
-                        objectFit="cover"
-                      />
+                      <Image src={previewUrl} alt="Background preview" layout="fill" objectFit="cover" />
                     </div>
                   )}
                 </div>
@@ -212,122 +239,124 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
             </Tabs>
           </div>
 
-        <FormField
-          control={form.control}
-          name="bio"
-          render={({ field }) => (
-            <FormItem>
-                <FormLabel className="cursor-pointer">Bio</FormLabel>
-              <FormControl>
-                <Textarea
-                  placeholder="Tell us a little about yourself..."
-                    className={cn(
-                      "resize-y min-h-[100px] cursor-text",
-                      isSaving && "cursor-not-allowed opacity-50"
-                    )}
-                  {...field}
-                  disabled={isSaving}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="skillsOfferedStr"
-          render={({ field }) => (
-            <FormItem>
-                <FormLabel className="cursor-pointer">Skills Offered</FormLabel>
-              <FormControl>
-                <Textarea
-                  placeholder="e.g., JavaScript, Graphic Design, Spanish Tutoring (comma-separated)"
-                    className={cn(
-                      "cursor-text",
-                      isSaving && "cursor-not-allowed opacity-50"
-                    )}
-                  {...field}
-                  disabled={isSaving}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="skillsWantedStr"
-          render={({ field }) => (
-            <FormItem>
-                <FormLabel className="cursor-pointer">Skills Wanted</FormLabel>
-              <FormControl>
-                <Textarea
-                  placeholder="e.g., Python, Public Speaking, Yoga (comma-separated)"
-                    className={cn(
-                      "cursor-text",
-                      isSaving && "cursor-not-allowed opacity-50"
-                    )}
-                  {...field}
-                  disabled={isSaving}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="timeAvailable"
-          render={({ field }) => (
-            <FormItem>
-                <FormLabel className="cursor-pointer">Time Available</FormLabel>
-              <FormControl>
-                  <Input 
-                    placeholder="e.g., 5-10 hours/week, Evenings" 
-                    {...field} 
+          <FormField
+            control={form.control}
+            name="bio"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Bio</FormLabel>
+                <FormControl>
+                  <Textarea
+                    placeholder="Tell us a little about yourself..."
+                    className="resize-y min-h-[90px]"
+                    {...field}
                     disabled={isSaving}
-                    className={cn(
-                      "cursor-text",
-                      isSaving && "cursor-not-allowed opacity-50"
-                    )}
                   />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* RESTRICTED SKILLS SELECTION SYSTEM */}
+          <div className="space-y-4 pt-2">
+            <div className="border-b pb-2">
+              <h3 className="text-base font-bold text-foreground">Skills & Expertise Registry</h3>
+              <p className="text-xs text-muted-foreground">Select skills to feature on your profile by checking the boxes below.</p>
+            </div>
+
+            {/* Category Accordion Selector */}
+            <div className="space-y-3">
+              {SKILL_TAXONOMY.map((group) => {
+                const isExpanded = expandedCategory === group.category;
+
+                return (
+                  <div key={group.category} className="border border-border/70 rounded-lg overflow-hidden bg-card/40">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedCategory(isExpanded ? "" : group.category)}
+                      className="w-full px-4 py-3 flex items-center justify-between font-semibold text-sm bg-muted/30 hover:bg-muted/50 transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        {group.category}
+                        <Badge variant="secondary" className="text-[10px] px-2 py-0.5">
+                          {group.skills.length} skills
+                        </Badge>
+                      </span>
+                      {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                    </button>
+
+                    {isExpanded && (
+                      <div className="p-4 space-y-4 bg-background/50">
+                        {group.skills.map((skillName) => {
+                          const isOffered = skillsOffered.some((s) => s.name === skillName);
+                          const isWanted = skillsWanted.some((s) => s.name === skillName);
+
+                          return (
+                            <div key={skillName} className="flex items-center justify-between py-1.5 border-b border-border/40 last:border-0 text-xs">
+                              <span className="font-medium text-foreground">{skillName}</span>
+
+                              <div className="flex items-center gap-4">
+                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                  <Checkbox
+                                    checked={isOffered}
+                                    onCheckedChange={() => toggleSkillOffered(skillName, group.category)}
+                                    disabled={isSaving}
+                                  />
+                                  <span className="text-amber-500 font-semibold flex items-center gap-1">
+                                    <Star className="h-3 w-3" /> Offer
+                                  </span>
+                                </label>
+
+                                <label className="flex items-center gap-1.5 cursor-pointer">
+                                  <Checkbox
+                                    checked={isWanted}
+                                    onCheckedChange={() => toggleSkillWanted(skillName, group.category)}
+                                    disabled={isSaving}
+                                  />
+                                  <span className="text-indigo-400 font-semibold flex items-center gap-1">
+                                    <BookOpen className="h-3 w-3" /> Learning
+                                  </span>
+                                </label>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <FormField
+            control={form.control}
+            name="timeAvailable"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Availability</FormLabel>
+                <FormControl>
+                  <Input placeholder="e.g., Weekdays, Evenings, Remote Only" {...field} disabled={isSaving} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
 
-        <div className="flex justify-end gap-4">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-            disabled={isSaving}
-            className={cn(
-              isSaving && "opacity-50 cursor-not-allowed"
-            )}
-          >
+        <div className="flex justify-end gap-3 border-t pt-4">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={isSaving}>
             Cancel
           </Button>
-          <Button 
-            type="submit" 
-            disabled={isSaving}
-            className={cn(
-              "min-w-[100px]",
-              isSuccess && "bg-green-600 hover:bg-green-700",
-              isSaving && "opacity-50 cursor-not-allowed"
-            )}
-          >
+          <Button type="submit" disabled={isSaving} className={cn(isSuccess && "bg-emerald-600 hover:bg-emerald-700")}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {isSuccess && <CheckCircle2 className="mr-2 h-4 w-4" />}
-            {isSaving ? "Saving..." : isSuccess ? "Saved!" : "Save Changes"}
+            {isSaving ? "Saving..." : isSuccess ? "Saved!" : "Save Profile"}
           </Button>
         </div>
       </form>
     </Form>
   );
 }
+
