@@ -25,13 +25,36 @@ export default function ListingsPage() {
         const { data, error } = await supabase
           .from("listings")
           .select("*")
+          .neq("status", "deleted")
           .order("created_at", { ascending: false });
 
-        if (error) {
+        if (error || !data) {
           console.error("Error fetching listings:", error);
           setListings([]);
         } else {
-          setListings(data || []);
+          // Batch fetch live profiles for all listing authors
+          const userIds = Array.from(new Set(data.map((item) => item.user_id).filter(Boolean)));
+          
+          if (userIds.length > 0) {
+            const { data: profilesData } = await supabase
+              .from("profiles")
+              .select("id, name, avatar_url")
+              .in("id", userIds);
+
+            const profileMap = new Map((profilesData || []).map((p) => [p.id, p]));
+
+            const enrichedListings = data.map((item) => {
+              const liveProfile = profileMap.get(item.user_id);
+              return {
+                ...item,
+                user_name: liveProfile?.name || item.user_name,
+                user_avatar_url: liveProfile?.avatar_url || item.user_avatar_url,
+              };
+            });
+            setListings(enrichedListings);
+          } else {
+            setListings(data);
+          }
         }
       } catch (err) {
         console.error("Unexpected error fetching listings:", err);

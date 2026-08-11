@@ -54,6 +54,7 @@ export default function DashboardPage() {
           .from("listings")
           .select("id", { count: "exact", head: true })
           .eq("user_id", user.id)
+          .neq("status", "deleted")
       ])
         .then(([profileData, listingsRes]) => {
           setProfile(profileData);

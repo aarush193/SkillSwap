@@ -23,6 +23,7 @@ import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 
 // Predefined restricted Skill Taxonomy
 const SKILL_TAXONOMY: { category: string; skills: string[] }[] = [
@@ -89,13 +90,19 @@ const generateSkillId = () => `skill_${Math.random().toString(36).substr(2, 9)}`
 
 const profileFormSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
-  bio: z.string().max(500, { message: "Bio must not exceed 500 characters." }).optional().default(""),
+  avatarUrl: z
+    .string()
+    .url({ message: "Please enter a valid image URL" })
+    .optional()
+    .nullable()
+    .or(z.literal("")),
   backgroundImageUrl: z
     .string()
     .url({ message: "Please enter a valid image URL" })
     .optional()
     .nullable()
     .or(z.literal("")),
+  bio: z.string().max(500, { message: "Bio must not exceed 500 characters." }).optional().default(""),
   timeAvailable: z.string().optional().default(""),
 });
 
@@ -119,21 +126,28 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
   const [skillsWanted, setSkillsWanted] = useState<Skill[]>(user.skillsWanted || []);
   const [expandedCategory, setExpandedCategory] = useState<string>("Technology");
 
+  // Keep local state synchronized whenever user skills change or profile reloads
+  useEffect(() => {
+    setSkillsOffered(user.skillsOffered || []);
+    setSkillsWanted(user.skillsWanted || []);
+  }, [user.skillsOffered, user.skillsWanted]);
+
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileFormSchema),
     defaultValues: {
       name: user.name,
-      bio: user.bio || "",
+      avatarUrl: user.avatarUrl || "",
       backgroundImageUrl: user.backgroundImageUrl || "",
+      bio: user.bio || "",
       timeAvailable: user.timeAvailable || "",
     },
   });
 
   const toggleSkillOffered = (skillName: string, category: string) => {
     setSkillsOffered((prev) => {
-      const exists = prev.some((s) => s.name === skillName);
+      const exists = prev.some((s) => s.name.trim().toLowerCase() === skillName.trim().toLowerCase());
       if (exists) {
-        return prev.filter((s) => s.name !== skillName);
+        return prev.filter((s) => s.name.trim().toLowerCase() !== skillName.trim().toLowerCase());
       } else {
         return [...prev, { id: generateSkillId(), name: skillName, category }];
       }
@@ -142,39 +156,84 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
 
   const toggleSkillWanted = (skillName: string, category: string) => {
     setSkillsWanted((prev) => {
-      const exists = prev.some((s) => s.name === skillName);
+      const exists = prev.some((s) => s.name.trim().toLowerCase() === skillName.trim().toLowerCase());
       if (exists) {
-        return prev.filter((s) => s.name !== skillName);
+        return prev.filter((s) => s.name.trim().toLowerCase() !== skillName.trim().toLowerCase());
       } else {
         return [...prev, { id: generateSkillId(), name: skillName, category }];
       }
     });
   };
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      const url = URL.createObjectURL(file);
-      setPreviewUrl(url);
+    if (!file) return;
+
+    try {
+      // Upload file directly to Supabase Storage if bucket exists, or convert to persistent Base64 Data URL
+      const fileExt = file.name.split('.').pop();
+      const fileName = `avatar_${user.id}_${Date.now()}.${fileExt}`;
+
+      // Try uploading to 'profiles' or 'avatars' storage bucket
+      const { data, error } = await supabase.storage.from("profiles").upload(fileName, file, { upsert: true });
+
+      if (!error && data) {
+        const { data: publicUrlData } = supabase.storage.from("profiles").getPublicUrl(fileName);
+        if (publicUrlData?.publicUrl) {
+          form.setValue("avatarUrl", publicUrlData.publicUrl);
+          return;
+        }
+      }
+
+      // If bucket does not exist or public upload fails, convert file to permanent Base64 Data URL (persists in DB across all sessions/devices)
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === "string") {
+          form.setValue("avatarUrl", reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error("Avatar upload exception:", err);
     }
   };
 
-  useEffect(() => {
-    return () => {
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
+  const handleBackgroundFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `bg_${user.id}_${Date.now()}.${fileExt}`;
+
+      const { data, error } = await supabase.storage.from("profiles").upload(fileName, file, { upsert: true });
+
+      if (!error && data) {
+        const { data: publicUrlData } = supabase.storage.from("profiles").getPublicUrl(fileName);
+        if (publicUrlData?.publicUrl) {
+          form.setValue("backgroundImageUrl", publicUrlData.publicUrl);
+          return;
+        }
       }
-    };
-  }, [previewUrl]);
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === "string") {
+          form.setValue("backgroundImageUrl", reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error("Background upload exception:", err);
+    }
+  };
 
   async function onSubmit(values: ProfileFormValues) {
-    let finalBackgroundImageUrl: string | undefined = values.backgroundImageUrl || user.backgroundImageUrl || undefined;
-
     const updatedProfileData: Partial<UserProfile> = {
       name: values.name,
+      avatarUrl: values.avatarUrl || user.avatarUrl,
+      backgroundImageUrl: values.backgroundImageUrl || user.backgroundImageUrl,
       bio: values.bio,
-      backgroundImageUrl: finalBackgroundImageUrl,
       skillsOffered,
       skillsWanted,
       timeAvailable: values.timeAvailable,
@@ -200,22 +259,23 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
             )}
           />
 
+          {/* Profile Avatar Selection */}
           <div className="space-y-2">
-            <h3 className="text-sm font-medium">Background Image</h3>
-            <Tabs defaultValue="url" onValueChange={(v) => setUploadMethod(v as "url" | "file")}>
+            <h3 className="text-sm font-medium">Profile Picture</h3>
+            <Tabs defaultValue="url">
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="url">URL</TabsTrigger>
-                <TabsTrigger value="file">Upload</TabsTrigger>
+                <TabsTrigger value="url">Image URL</TabsTrigger>
+                <TabsTrigger value="file">Upload File</TabsTrigger>
               </TabsList>
               <TabsContent value="url">
                 <FormField
                   control={form.control}
-                  name="backgroundImageUrl"
+                  name="avatarUrl"
                   render={({ field }) => (
                     <FormItem>
                       <FormControl>
                         <Input
-                          placeholder="Enter image URL"
+                          placeholder="Enter avatar image URL (e.g. https://...)"
                           {...field}
                           value={field.value ?? ""}
                           disabled={isSaving}
@@ -227,11 +287,54 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
                 />
               </TabsContent>
               <TabsContent value="file">
-                <div className="space-y-4">
-                  <Input type="file" accept="image/*" onChange={handleFileChange} disabled={isSaving} />
-                  {previewUrl && (
-                    <div className="relative h-32 w-full overflow-hidden rounded-lg">
-                      <Image src={previewUrl} alt="Background preview" layout="fill" objectFit="cover" />
+                <div className="space-y-2">
+                  <Input type="file" accept="image/*" onChange={handleAvatarFileChange} disabled={isSaving} />
+                  {form.watch("avatarUrl") && (
+                    <div className="flex items-center gap-3 pt-2">
+                      <div className="relative h-12 w-12 overflow-hidden rounded-full border">
+                        <img src={form.watch("avatarUrl") || ""} alt="Avatar preview" className="h-full w-full object-cover" />
+                      </div>
+                      <span className="text-xs text-emerald-600 font-medium">Image loaded & ready to save</span>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
+          </div>
+
+          {/* Background / Cover Image Selection */}
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium">Header / Background Image</h3>
+            <Tabs defaultValue="url">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="url">Image URL</TabsTrigger>
+                <TabsTrigger value="file">Upload File</TabsTrigger>
+              </TabsList>
+              <TabsContent value="url">
+                <FormField
+                  control={form.control}
+                  name="backgroundImageUrl"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <Input
+                          placeholder="Enter header image URL (e.g. https://...)"
+                          {...field}
+                          value={field.value ?? ""}
+                          disabled={isSaving}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </TabsContent>
+              <TabsContent value="file">
+                <div className="space-y-2">
+                  <Input type="file" accept="image/*" onChange={handleBackgroundFileChange} disabled={isSaving} />
+                  {form.watch("backgroundImageUrl") && (
+                    <div className="relative h-24 w-full overflow-hidden rounded-lg border mt-2">
+                      <img src={form.watch("backgroundImageUrl") || ""} alt="Background preview" className="h-full w-full object-cover" />
                     </div>
                   )}
                 </div>
@@ -289,8 +392,8 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
                     {isExpanded && (
                       <div className="p-4 space-y-4 bg-background/50">
                         {group.skills.map((skillName) => {
-                          const isOffered = skillsOffered.some((s) => s.name === skillName);
-                          const isWanted = skillsWanted.some((s) => s.name === skillName);
+                          const isOffered = skillsOffered.some((s) => s.name.trim().toLowerCase() === skillName.trim().toLowerCase());
+                          const isWanted = skillsWanted.some((s) => s.name.trim().toLowerCase() === skillName.trim().toLowerCase());
 
                           return (
                             <div key={skillName} className="flex items-center justify-between py-1.5 border-b border-border/40 last:border-0 text-xs">

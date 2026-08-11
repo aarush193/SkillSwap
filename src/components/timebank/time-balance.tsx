@@ -49,9 +49,9 @@ export function TimeBalanceDisplay({ currentBalance, totalCredited, totalSpent }
             </div>
         )}
 
-        <div className="flex items-start p-3 bg-accent/10 border-l-4 border-accent text-accent-foreground rounded-md">
-            <Info className="h-5 w-5 mr-3 mt-0.5 shrink-0 text-accent"/>
-            <p className="text-sm">
+        <div className="flex items-start p-4 bg-muted/60 border-l-4 border-primary rounded-r-md">
+            <Info className="h-5 w-5 mr-3 mt-0.5 shrink-0 text-primary"/>
+            <p className="text-sm text-foreground leading-relaxed">
                 Your time balance reflects the net hours from skills you&apos;ve offered versus skills you&apos;ve received. Keep contributing to earn more time!
             </p>
         </div>

@@ -81,12 +81,10 @@ export function ProfileDisplay({ user, onEdit }: ProfileDisplayProps) {
       {/* 1. Professional Header Section */}
       <div className="relative">
         <div className="w-full h-44 md:h-56 relative overflow-hidden rounded-xl border border-border/60 shadow-md">
-          <Image
+          <img
             src={user.backgroundImageUrl || defaultBackgroundImage}
             alt="Profile background"
-            layout="fill"
-            objectFit="cover"
-            priority
+            className="w-full h-full object-cover"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/40 to-transparent" />
         </div>

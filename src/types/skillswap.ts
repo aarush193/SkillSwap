@@ -30,7 +30,7 @@ export interface Listing {
   description: string;
   tags: string[];
   created_at: string;
-  status: "open" | "closed" | "in_progress";
+  status: "open" | "closed" | "in_progress" | "deleted";
 }
 
 export interface TimeLog {

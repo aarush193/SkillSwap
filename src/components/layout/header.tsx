@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Zap, LayoutDashboard, User, List, Clock, LogOut, Settings, Menu, MessageSquare } from "lucide-react";
+import { Zap, LayoutDashboard, User, List, Clock, LogOut, Settings, Menu, MessageSquare, Repeat, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,41 +12,88 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { useRouter } from "next/navigation";
+import { fetchUserProfile } from "@/lib/profile-service";
+import type { UserProfile } from "@/types/skillswap";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/profile", label: "Profile", icon: User },
   { href: "/listings", label: "Listings", icon: List },
-  { href: "/messages", label: "Messages", icon: MessageSquare },
+  { href: "/exchanges", label: "Exchanges", icon: Repeat },
   { href: "/timebank", label: "Time Bank", icon: Clock },
+  { href: "/profile", label: "Profile", icon: User },
 ];
 
 export function AppHeader() {
   const pathname = usePathname();
   const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    // Check if dark mode is active
+    if (typeof window !== "undefined") {
+      setIsDark(document.documentElement.classList.contains("dark"));
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const nextDark = !isDark;
+    setIsDark(nextDark);
+    if (nextDark) {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("skillswap-theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("skillswap-theme", "light");
+    }
+  };
+
+  const loadProfileData = async (userId: string) => {
+    try {
+      const p = await fetchUserProfile(userId);
+      setUserProfile(p);
+    } catch (err) {
+      console.error("Error loading header profile:", err);
+    }
+  };
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
+      if (data.user) {
+        loadProfileData(data.user.id);
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        loadProfileData(currentUser.id);
+      } else {
+        setUserProfile(null);
+      }
     });
 
     return () => {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Re-fetch profile whenever user navigates to ensure immediate update after editing profile page
+  useEffect(() => {
+    if (user?.id) {
+      loadProfileData(user.id);
+    }
+  }, [pathname, user?.id]);
 
   const handleSignOut = async () => {
     try {
@@ -103,21 +150,35 @@ export function AppHeader() {
         </div>
 
         <div className="flex items-center space-x-3">
+          {/* Theme Toggle Button */}
+          <Button variant="ghost" size="icon" onClick={toggleTheme} title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}>
+            {isDark ? <Sun className="h-5 w-5 text-amber-400" /> : <Moon className="h-5 w-5 text-muted-foreground hover:text-foreground" />}
+            <span className="sr-only">Toggle Theme</span>
+          </Button>
+
+          {/* Messages Quick Access Button */}
+          <Button variant="ghost" size="icon" asChild title="Direct Messages" className={cn(pathname === "/messages" && "bg-muted")}>
+            <Link href="/messages">
+              <MessageSquare className="h-5 w-5 text-muted-foreground hover:text-foreground transition-colors" />
+              <span className="sr-only">Messages</span>
+            </Link>
+          </Button>
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                 <Avatar className="h-9 w-9">
-                  <AvatarImage src={user?.user_metadata?.avatar_url || undefined} alt={user?.user_metadata?.full_name || "User Avatar"} />
-                  <AvatarFallback>{(user?.user_metadata?.full_name || user?.email || "User").substring(0, 2).toUpperCase()}</AvatarFallback>
+                  <AvatarImage src={userProfile?.avatarUrl || user?.user_metadata?.avatar_url || undefined} alt={userProfile?.name || "User Avatar"} />
+                  <AvatarFallback>{(userProfile?.name || user?.user_metadata?.full_name || user?.email || "User").substring(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="end" forceMount>
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">{user?.user_metadata?.full_name || user?.email?.split('@')[0] || "User"}</p>
+                  <p className="text-sm font-medium leading-none">{userProfile?.name || user?.user_metadata?.full_name || user?.email?.split('@')[0] || "User"}</p>
                   <p className="text-xs leading-none text-muted-foreground">
-                    {user?.email || "No email"}
+                    {userProfile?.email || user?.email || "No email"}
                   </p>
                 </div>
               </DropdownMenuLabel>

@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "../../lib/supabase";
+import { fetchUserProfile } from "@/lib/profile-service";
 import { useToast } from "@/hooks/use-toast";
 import { clsx } from "clsx";
 import Link from "next/link";
@@ -132,10 +133,12 @@ export function CreateListingForm() {
         return;
       }
 
+      const userProfile = await fetchUserProfile(user.id);
+
       const listingToInsert = {
         user_id: user.id,
-        user_name: user.user_metadata?.full_name || user.email,
-        user_avatar_url: user.user_metadata?.avatar_url || null,
+        user_name: userProfile?.name || user.user_metadata?.full_name || user.email,
+        user_avatar_url: userProfile?.avatarUrl || user.user_metadata?.avatar_url || null,
         type: values.type,
         title: values.title,
         category: values.category,

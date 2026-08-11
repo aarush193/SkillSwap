@@ -1,6 +1,66 @@
 import { supabase } from './supabase';
 import type { UserProfile, Skill } from '@/types/skillswap';
 
+const SKILL_TAXONOMY: { category: string; skills: string[] }[] = [
+  {
+    category: "Technology",
+    skills: [
+      "Frontend (React / Next.js)",
+      "Backend (Node.js / Express)",
+      "Python & Django",
+      "Mobile App Dev (React Native / Flutter)",
+      "Data Science & AI",
+      "DevOps & AWS Cloud",
+      "Web Security",
+      "Database Admin (PostgreSQL / SQL)",
+      "UI/UX Design",
+    ],
+  },
+  {
+    category: "Creative & Media",
+    skills: [
+      "Graphic Design & Branding",
+      "Video Editing & Premiere",
+      "3D Modeling & Animation",
+      "Photography & Retouching",
+      "Music Production & Audio",
+      "Content Writing & Copywriting",
+    ],
+  },
+  {
+    category: "Business & Marketing",
+    skills: [
+      "SEO & Search Marketing",
+      "Social Media Marketing",
+      "Project Management (Agile)",
+      "Business Strategy & Analytics",
+      "Product Management",
+      "Sales & Lead Generation",
+    ],
+  },
+  {
+    category: "Languages & Academics",
+    skills: [
+      "English Fluency / Writing",
+      "Spanish Conversation",
+      "French Language",
+      "Mathematics & Calculus",
+      "Physics & Engineering",
+      "Public Speaking",
+    ],
+  },
+  {
+    category: "Lifestyle & Fitness",
+    skills: [
+      "Yoga & Mindfulness",
+      "Personal Fitness Training",
+      "Guitar / Piano Instruction",
+      "Cooking & Culinary Arts",
+      "Gardening & Plant Care",
+    ],
+  },
+];
+
 export async function fetchUserProfile(userId: string): Promise<UserProfile | null> {
   try {
     console.log("Fetching profile for user ID:", userId);
@@ -40,14 +100,22 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
       throw new Error(`Error fetching skills data: ${skillsError.message}`);
     }
     
+    // Helper to derive category from taxonomy lookup
+    const lookupCategory = (skillName: string): string => {
+      const taxonomyMatch = SKILL_TAXONOMY.find((catGroup) =>
+        catGroup.skills.some((s) => s.trim().toLowerCase() === skillName.trim().toLowerCase())
+      );
+      return taxonomyMatch ? taxonomyMatch.category : "General";
+    };
+
     // Transform database model to our app model
     const skillsOffered = (skillsData || [])
       .filter(skill => skill.type === 'offered')
-      .map(skill => ({ id: skill.id, name: skill.name, category: skill.category || 'General' }));
+      .map(skill => ({ id: skill.id, name: skill.name, category: skill.category || lookupCategory(skill.name) }));
     
     const skillsWanted = (skillsData || [])
       .filter(skill => skill.type === 'wanted')
-      .map(skill => ({ id: skill.id, name: skill.name, category: skill.category || 'General' }));
+      .map(skill => ({ id: skill.id, name: skill.name, category: skill.category || lookupCategory(skill.name) }));
     
     // Ensure timeBalance is a number and has a default value of 12 if it's null/undefined/0
     const timeBalance = typeof profileData.time_balance === 'number' ? profileData.time_balance : 12;
@@ -84,6 +152,7 @@ export async function saveUserProfile(profile: Partial<UserProfile> & { id: stri
         name: profile.name,
         email: profile.email,
         bio: profile.bio,
+        avatar_url: profile.avatarUrl,
         background_image_url: profile.backgroundImageUrl,
         time_available: profile.timeAvailable,
         time_balance: profile.timeBalance,
@@ -111,7 +180,6 @@ export async function saveUserProfile(profile: Partial<UserProfile> & { id: stri
         const offeredSkills = profile.skillsOffered.map(skill => ({
           profile_id: profile.id,
           name: skill.name,
-          category: skill.category || 'General',
           type: 'offered',
         }));
         skillsToInsert.push(...offeredSkills);
@@ -121,7 +189,6 @@ export async function saveUserProfile(profile: Partial<UserProfile> & { id: stri
         const wantedSkills = profile.skillsWanted.map(skill => ({
           profile_id: profile.id,
           name: skill.name,
-          category: skill.category || 'General',
           type: 'wanted',
         }));
         skillsToInsert.push(...wantedSkills);

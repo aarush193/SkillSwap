@@ -15,11 +15,23 @@ import {
   DialogTitle, 
   DialogTrigger 
 } from "@/components/ui/dialog";
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { CalendarDays, Clock, Mail, MessageSquare, Tag, Info, ArrowLeft, Loader2, Sparkles, HelpCircle, Repeat } from "lucide-react";
+import { CalendarDays, Clock, Mail, MessageSquare, Tag, Info, ArrowLeft, Loader2, Sparkles, HelpCircle, Repeat, User, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { fetchUserProfile } from "@/lib/profile-service";
@@ -29,11 +41,55 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const resolvedParams = use(params);
   const listingId = resolvedParams.id;
   const { toast } = useToast();
+  const router = useRouter();
 
   const [listing, setListing] = useState<Listing | null>(null);
   const [listerProfile, setListerProfile] = useState<UserProfile | null>(null);
   const [currentUserProfile, setCurrentUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteListing = async () => {
+    if (!currentUserProfile?.id || !listing?.id) return;
+
+    if (listing.user_id !== currentUserProfile.id) {
+      toast({
+        title: "Permission Denied",
+        description: "You can only delete your own listings.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("listings")
+        .update({ status: "deleted" })
+        .eq("id", listing.id)
+        .eq("user_id", currentUserProfile.id);
+
+      if (error) {
+        console.error("Delete error details:", JSON.stringify(error, null, 2));
+        toast({
+          title: "Delete Failed",
+          description: error.message || error.details || "Could not delete the listing.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Listing Deleted",
+          description: "Your listing was successfully removed.",
+        });
+        router.push("/listings");
+        router.refresh();
+      }
+    } catch (err: any) {
+      console.error("Delete listing exception:", err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   // Proposal modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -61,12 +117,15 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
           console.error("Error fetching listing:", error);
           setListing(null);
         } else {
-          setListing(listingData);
-
           if (listingData.user_id) {
             const profile = await fetchUserProfile(listingData.user_id);
             setListerProfile(profile);
+            if (profile) {
+              listingData.user_name = profile.name || listingData.user_name;
+              listingData.user_avatar_url = profile.avatarUrl || listingData.user_avatar_url;
+            }
           }
+          setListing(listingData);
         }
 
         // Fetch current logged-in user profile
@@ -191,18 +250,15 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
       const proposalData = {
         listing_id: listingId,
-        sender_id: senderId,
-        sender_name: senderName,
-        receiver_id: receiverId,
-        offered_skill: offeredSkill,
-        proposed_hours: parseFloat(proposedHours) || 1,
-        message: proposalMessage,
-        type: "proposal",
-        status: "pending",
+        requester_id: senderId,
+        provider_id: receiverId,
+        skill_name: offeredSkill,
+        hours: parseFloat(proposedHours) || 1,
+        status: "requested",
         created_at: new Date().toISOString(),
       };
 
-      const { error } = await supabase.from("transactions").insert([proposalData]);
+      const { error } = await supabase.from("exchanges").insert([proposalData]);
 
       if (error) {
         console.error("Error sending proposal:", JSON.stringify(error, null, 2));
@@ -242,11 +298,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     );
   }
 
-  if (!listing) {
+  if (!listing || listing.status === "deleted") {
     return (
       <div className="max-w-xl mx-auto py-16 text-center space-y-4">
-        <h1 className="text-2xl font-bold text-foreground">Listing Not Found</h1>
-        <p className="text-muted-foreground">The skill listing you are looking for does not exist or has been removed.</p>
+        <h1 className="text-2xl font-bold text-foreground">Listing Unavailable</h1>
+        <p className="text-muted-foreground">This skill listing has been removed or is no longer active.</p>
         <Button asChild className="mt-4">
           <Link href="/listings">
             <ArrowLeft className="mr-2 h-4 w-4" /> Back to Listings
@@ -383,131 +439,177 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               )}
             </CardContent>
 
-            {/* Option 3: Dual Action Buttons */}
+            {/* Option 3: Action Buttons (Owner vs Member View) */}
             <CardFooter className="flex flex-col gap-3 pt-0 pb-6 px-6">
-              {/* Action 1: Propose Skill Exchange (Modal) */}
-              <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-                <DialogTrigger asChild>
-                  <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-md">
-                    <Repeat className="mr-2 h-4 w-4" /> Propose Skill Exchange
+              {currentUserProfile?.id && listing.user_id === currentUserProfile.id ? (
+                <div className="w-full space-y-3 pt-2">
+                  <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg text-center">
+                    <Badge variant="outline" className="bg-primary/20 text-primary border-primary/30 text-xs font-semibold mb-1">
+                      Your Listing
+                    </Badge>
+                    <p className="text-xs text-muted-foreground">
+                      This listing is published by you. Member requests will appear under your Exchanges.
+                    </p>
+                  </div>
+                  <Button asChild variant="outline" className="w-full">
+                    <Link href="/profile">
+                      <User className="mr-2 h-4 w-4 text-primary" /> View My Profile
+                    </Link>
                   </Button>
-                </DialogTrigger>
-
-                <DialogContent className="sm:max-w-md">
-                  <form onSubmit={handleSendProposal}>
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2">
-                        <Repeat className="h-5 w-5 text-primary" /> Propose Exchange with {listing.user_name}
-                      </DialogTitle>
-                      <DialogDescription>
-                        Trade time credits for &quot;{listing.title}&quot;.
-                      </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="offeredSkill">Skill You Offer in Return*</Label>
-                        <Input
-                          id="offeredSkill"
-                          placeholder="e.g., Python Basics, Graphic Design"
-                          value={offeredSkill}
-                          onChange={(e) => setOfferedSkill(e.target.value)}
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label htmlFor="proposedHours">Hours Proposed*</Label>
-                        <Input
-                          id="proposedHours"
-                          type="number"
-                          min="0.5"
-                          step="0.5"
-                          placeholder="1.0"
-                          value={proposedHours}
-                          onChange={(e) => setProposedHours(e.target.value)}
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label htmlFor="proposalMessage">Note to Lister (Optional)</Label>
-                        <Textarea
-                          id="proposalMessage"
-                          placeholder="Hi! I'd love to exchange skills. Let me know if you're available..."
-                          value={proposalMessage}
-                          onChange={(e) => setProposalMessage(e.target.value)}
-                          className="min-h-[90px]"
-                        />
-                      </div>
-                    </div>
-
-                    <DialogFooter>
-                      <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
-                        Cancel
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="outline" className="w-full text-destructive border-destructive/30 hover:bg-destructive/10">
+                        <Trash2 className="mr-2 h-4 w-4" /> Delete Listing
                       </Button>
-                      <Button type="submit" disabled={submittingProposal}>
-                        {submittingProposal ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...
-                          </>
-                        ) : (
-                          "Send Exchange Proposal"
-                        )}
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Skill Listing</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Are you sure you want to delete this listing (&quot;{listing.title}&quot;)? This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={handleDeleteListing}
+                          disabled={isDeleting}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          {isDeleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                          Delete Listing
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              ) : (
+                <>
+                  {/* Action 1: Propose Skill Exchange (Modal) */}
+                  <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                    <DialogTrigger asChild>
+                      <Button className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-semibold shadow-md">
+                        <Repeat className="mr-2 h-4 w-4" /> Propose Skill Exchange
                       </Button>
-                    </DialogFooter>
-                  </form>
-                </DialogContent>
-              </Dialog>
+                    </DialogTrigger>
 
-              {/* Action 2: In-App Direct Message */}
-              <Dialog open={isMessageModalOpen} onOpenChange={setIsMessageModalOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="w-full border-border/80">
-                    <MessageSquare className="mr-2 h-4 w-4 text-muted-foreground" /> Send Direct Message
-                  </Button>
-                </DialogTrigger>
+                    <DialogContent className="sm:max-w-md">
+                      <form onSubmit={handleSendProposal}>
+                        <DialogHeader>
+                          <DialogTitle className="flex items-center gap-2">
+                            <Repeat className="h-5 w-5 text-primary" /> Propose Exchange with {listing.user_name}
+                          </DialogTitle>
+                          <DialogDescription>
+                            Trade time credits for &quot;{listing.title}&quot;.
+                          </DialogDescription>
+                        </DialogHeader>
 
-                <DialogContent className="sm:max-w-md">
-                  <form onSubmit={handleSendMessage}>
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2">
-                        <MessageSquare className="h-5 w-5 text-primary" /> Message {listing.user_name}
-                      </DialogTitle>
-                      <DialogDescription>
-                        Send an in-app message regarding &quot;{listing.title}&quot;.
-                      </DialogDescription>
-                    </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="space-y-1.5">
+                            <Label htmlFor="offeredSkill">Skill You Offer in Return*</Label>
+                            <Input
+                              id="offeredSkill"
+                              placeholder="e.g., Python Basics, Graphic Design"
+                              value={offeredSkill}
+                              onChange={(e) => setOfferedSkill(e.target.value)}
+                              required
+                            />
+                          </div>
 
-                    <div className="py-4">
-                      <Label htmlFor="directMessage">Your Message*</Label>
-                      <Textarea
-                        id="directMessage"
-                        placeholder={`Hi ${listing.user_name || "there"}, I saw your listing for ${listing.title} and wanted to reach out...`}
-                        value={directMessageText}
-                        onChange={(e) => setDirectMessageText(e.target.value)}
-                        required
-                        className="min-h-[120px] mt-1.5"
-                      />
-                    </div>
+                          <div className="space-y-1.5">
+                            <Label htmlFor="proposedHours">Hours Proposed*</Label>
+                            <Input
+                              id="proposedHours"
+                              type="number"
+                              min="0.5"
+                              step="0.5"
+                              placeholder="1.0"
+                              value={proposedHours}
+                              onChange={(e) => setProposedHours(e.target.value)}
+                              required
+                            />
+                          </div>
 
-                    <DialogFooter>
-                      <Button type="button" variant="outline" onClick={() => setIsMessageModalOpen(false)}>
-                        Cancel
+                          <div className="space-y-1.5">
+                            <Label htmlFor="proposalMessage">Note to Lister (Optional)</Label>
+                            <Textarea
+                              id="proposalMessage"
+                              placeholder="Hi! I'd love to exchange skills. Let me know if you're available..."
+                              value={proposalMessage}
+                              onChange={(e) => setProposalMessage(e.target.value)}
+                              className="min-h-[90px]"
+                            />
+                          </div>
+                        </div>
+
+                        <DialogFooter>
+                          <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>
+                            Cancel
+                          </Button>
+                          <Button type="submit" disabled={submittingProposal}>
+                            {submittingProposal ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...
+                              </>
+                            ) : (
+                              "Send Exchange Proposal"
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+
+                  {/* Action 2: In-App Direct Message */}
+                  <Dialog open={isMessageModalOpen} onOpenChange={setIsMessageModalOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" className="w-full border-border/80">
+                        <MessageSquare className="mr-2 h-4 w-4 text-muted-foreground" /> Send Direct Message
                       </Button>
-                      <Button type="submit" disabled={submittingMessage}>
-                        {submittingMessage ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...
-                          </>
-                        ) : (
-                          "Send Message"
-                        )}
-                      </Button>
-                    </DialogFooter>
-                  </form>
-                </DialogContent>
-              </Dialog>
+                    </DialogTrigger>
+
+                    <DialogContent className="sm:max-w-md">
+                      <form onSubmit={handleSendMessage}>
+                        <DialogHeader>
+                          <DialogTitle className="flex items-center gap-2">
+                            <MessageSquare className="h-5 w-5 text-primary" /> Message {listing.user_name}
+                          </DialogTitle>
+                          <DialogDescription>
+                            Send an in-app message regarding &quot;{listing.title}&quot;.
+                          </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="py-4">
+                          <Label htmlFor="directMessage">Your Message*</Label>
+                          <Textarea
+                            id="directMessage"
+                            placeholder={`Hi ${listing.user_name || "there"}, I saw your listing for ${listing.title} and wanted to reach out...`}
+                            value={directMessageText}
+                            onChange={(e) => setDirectMessageText(e.target.value)}
+                            required
+                            className="min-h-[120px] mt-1.5"
+                          />
+                        </div>
+
+                        <DialogFooter>
+                          <Button type="button" variant="outline" onClick={() => setIsMessageModalOpen(false)}>
+                            Cancel
+                          </Button>
+                          <Button type="submit" disabled={submittingMessage}>
+                            {submittingMessage ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Sending...
+                              </>
+                            ) : (
+                              "Send Message"
+                            )}
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </>
+              )}
             </CardFooter>
           </Card>
         </div>

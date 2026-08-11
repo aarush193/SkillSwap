@@ -1,13 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { ThemeProvider as NextThemesProvider } from "next-themes";
-import type { ThemeProviderProps } from "next-themes/dist/types";
 
-export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
-  return (
-    <NextThemesProvider {...props} enableColorScheme={false}>
-      {children}
-    </NextThemesProvider>
-  );
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  React.useEffect(() => {
+    // Check initial system or saved theme preference
+    const savedTheme = localStorage.getItem("skillswap-theme");
+    if (savedTheme === "dark" || (!savedTheme && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, []);
+
+  return <>{children}</>;
 }

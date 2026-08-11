@@ -43,7 +43,10 @@ export default function TimeBankPage() {
     );
   }
 
-  const currentBalance = profile?.timeBalance ?? 12.0;
+  const INITIAL_BALANCE = 12.0;
+  const currentBalance = profile?.timeBalance ?? INITIAL_BALANCE;
+  const totalSpent = Math.max(0, INITIAL_BALANCE - currentBalance);
+  const totalCredited = INITIAL_BALANCE + Math.max(0, currentBalance - INITIAL_BALANCE);
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
@@ -67,8 +70,8 @@ export default function TimeBankPage() {
         <TabsContent value="overview">
           <TimeBalanceDisplay 
             currentBalance={currentBalance}
-            totalCredited={currentBalance}
-            totalSpent={0}
+            totalCredited={totalCredited}
+            totalSpent={totalSpent}
           />
         </TabsContent>
 

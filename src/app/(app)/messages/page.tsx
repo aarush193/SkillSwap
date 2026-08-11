@@ -11,24 +11,19 @@ import { formatDistanceToNow } from "date-fns";
 import Link from "next/link";
 import { useToast } from "@/hooks/use-toast";
 
-interface TransactionMessage {
+interface DirectMessage {
   id: string;
-  listing_id: string;
   sender_id: string;
   sender_name: string;
   receiver_id: string;
-  offered_skill?: string;
-  proposed_hours?: number;
   message?: string;
-  type?: string;
-  status?: string;
   created_at: string;
 }
 
 export default function MessagesPage() {
   const { toast } = useToast();
   const [user, setUser] = useState<any>(null);
-  const [messages, setMessages] = useState<TransactionMessage[]>([]);
+  const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<"inbox" | "sent">("inbox");
 
@@ -42,27 +37,9 @@ export default function MessagesPage() {
           return;
         }
         setUser(user);
-
-        // Fetch messages where user is receiver or sender
-        const [receivedRes, sentRes] = await Promise.all([
-          supabase.from("transactions").select("*").eq("receiver_id", user.id).order("created_at", { ascending: false }),
-          supabase.from("transactions").select("*").eq("sender_id", user.id).order("created_at", { ascending: false })
-        ]);
-
-        if (receivedRes.error) {
-          console.error("Error loading received messages:", JSON.stringify(receivedRes.error, null, 2));
-        }
-        if (sentRes.error) {
-          console.error("Error loading sent messages:", JSON.stringify(sentRes.error, null, 2));
-        }
-
-        const combined = [...(receivedRes.data || []), ...(sentRes.data || [])];
-        const unique = Array.from(new Map(combined.map(item => [item.id, item])).values())
-          .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-
-        setMessages(unique);
+        setMessages([]);
       } catch (err: any) {
-        console.error("Unexpected error loading messages:", err?.message || JSON.stringify(err, null, 2));
+        console.error("Unexpected error loading messages:", err?.message || err);
       } finally {
         setLoading(false);
       }
@@ -70,33 +47,6 @@ export default function MessagesPage() {
 
     loadUserAndMessages();
   }, []);
-
-  const handleUpdateStatus = async (messageId: string, newStatus: string) => {
-    try {
-      const { error } = await supabase
-        .from("transactions")
-        .update({ status: newStatus })
-        .eq("id", messageId);
-
-      if (error) {
-        toast({
-          title: "Update Failed",
-          description: "Could not update message status.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Status Updated",
-          description: `Proposal marked as ${newStatus}.`,
-        });
-        setMessages((prev) =>
-          prev.map((msg) => (msg.id === messageId ? { ...msg, status: newStatus } : msg))
-        );
-      }
-    } catch (err) {
-      console.error("Error updating status:", err);
-    }
-  };
 
   if (loading) {
     return (

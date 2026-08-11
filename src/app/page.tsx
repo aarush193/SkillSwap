@@ -48,20 +48,6 @@ export default function LandingPage() {
             </div>
           </div>
         </section>
-        
-        {/* Placeholder Image Section */}
-        <section className="py-12 md:py-16">
-            <div className="container px-4 md:px-6">
-                <Image
-                    src="https://picsum.photos/1200/400?grayscale&blur=2"
-                    alt="Community Collaboration"
-                    width={1200}
-                    height={400}
-                    className="rounded-lg shadow-lg mx-auto"
-                    data-ai-hint="community collaboration"
-                />
-            </div>
-        </section>
 
         {/* Features Section */}
         <section className="py-12 md:py-16 bg-secondary/50">
