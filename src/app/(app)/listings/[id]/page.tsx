@@ -35,6 +35,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { fetchUserProfile } from "@/lib/profile-service";
+import { sendMessage } from "@/lib/messages-service";
 import { useToast } from "@/hooks/use-toast";
 
 export default function ListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -177,24 +178,18 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         return;
       }
 
-      const messageData = {
-        listing_id: listingId,
-        sender_id: senderId,
-        sender_name: senderName,
-        receiver_id: receiverId,
-        message: directMessageText,
-        type: "direct_message",
-        status: "sent",
-        created_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase.from("transactions").insert([messageData]);
+      const { error } = await sendMessage({
+        senderId,
+        receiverId,
+        content: directMessageText,
+        listingId,
+      });
 
       if (error) {
         console.error("Error sending message:", JSON.stringify(error, null, 2));
         toast({
           title: "Message Failed",
-          description: error.message || error.details || "Could not send in-app message. Check database schema.",
+          description: error.message || "Could not send in-app message.",
           variant: "destructive",
         });
       } else {
@@ -204,6 +199,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         });
         setIsMessageModalOpen(false);
         setDirectMessageText("");
+        router.push(`/messages?partner=${receiverId}`);
       }
     } catch (err: any) {
       console.error("Message error:", err);
@@ -312,7 +308,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     );
   }
 
-  const isOffered = listing.type === "offered" || listing.type === "offer";
+  const isOffered = listing.type === "offered";
   const skillTags = [...(listing.skill_names || []), ...(listing.tags || [])];
 
   return (

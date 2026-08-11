@@ -50,7 +50,36 @@ export interface TimeTransaction {
   userName: string; // Person you exchanged with
   skillName: string;
   hours: number;
-  date: string; // Formatted date string
-  type: "credited" | "spent";
   description?: string;
 }
+
+export interface DirectMessage {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  listing_id?: string | null;
+  content: string;
+  read_at?: string | null;
+  created_at: string;
+  sender_profile?: {
+    id: string;
+    name: string;
+    avatar_url?: string;
+  };
+  receiver_profile?: {
+    id: string;
+    name: string;
+    avatar_url?: string;
+  };
+}
+
+export interface Conversation {
+  partner_id: string;
+  partner_name: string;
+  partner_avatar_url?: string;
+  latest_message_content: string;
+  latest_message_timestamp: string;
+  has_unread: boolean;
+  listing_id?: string | null;
+}
+

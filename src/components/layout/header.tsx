@@ -33,6 +33,7 @@ export function AppHeader() {
   const pathname = usePathname();
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDark, setIsDark] = useState(false);
@@ -65,11 +66,28 @@ export function AppHeader() {
     }
   };
 
+  const checkUnreadMessages = async (userId: string) => {
+    try {
+      const { count, error } = await supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("receiver_id", userId)
+        .is("read_at", null);
+
+      if (!error && typeof count === "number") {
+        setHasUnreadMessages(count > 0);
+      }
+    } catch (err) {
+      console.error("Error checking unread messages:", err);
+    }
+  };
+
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user);
       if (data.user) {
         loadProfileData(data.user.id);
+        checkUnreadMessages(data.user.id);
       }
     });
 
@@ -78,8 +96,10 @@ export function AppHeader() {
       setUser(currentUser);
       if (currentUser) {
         loadProfileData(currentUser.id);
+        checkUnreadMessages(currentUser.id);
       } else {
         setUserProfile(null);
+        setHasUnreadMessages(false);
       }
     });
 
@@ -88,10 +108,11 @@ export function AppHeader() {
     };
   }, []);
 
-  // Re-fetch profile whenever user navigates to ensure immediate update after editing profile page
+  // Re-fetch profile and unread messages whenever user navigates
   useEffect(() => {
     if (user?.id) {
       loadProfileData(user.id);
+      checkUnreadMessages(user.id);
     }
   }, [pathname, user?.id]);
 
@@ -157,9 +178,12 @@ export function AppHeader() {
           </Button>
 
           {/* Messages Quick Access Button */}
-          <Button variant="ghost" size="icon" asChild title="Direct Messages" className={cn(pathname === "/messages" && "bg-muted")}>
+          <Button variant="ghost" size="icon" asChild title="Direct Messages" className={cn("relative", pathname === "/messages" && "bg-muted")}>
             <Link href="/messages">
               <MessageSquare className="h-5 w-5 text-muted-foreground hover:text-foreground transition-colors" />
+              {hasUnreadMessages && (
+                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background animate-pulse" />
+              )}
               <span className="sr-only">Messages</span>
             </Link>
           </Button>
@@ -184,9 +208,14 @@ export function AppHeader() {
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
-                <Link href="/messages" className="flex items-center">
-                  <MessageSquare className="mr-2 h-4 w-4" />
-                  <span>Messages</span>
+                <Link href="/messages" className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <MessageSquare className="mr-2 h-4 w-4" />
+                    <span>Messages</span>
+                  </div>
+                  {hasUnreadMessages && (
+                    <span className="h-2 w-2 rounded-full bg-red-500" />
+                  )}
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
@@ -212,8 +241,11 @@ export function AppHeader() {
           <div className="md:hidden">
             <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon">
+                <Button variant="ghost" size="icon" className="relative">
                   <Menu className="h-6 w-6" />
+                  {hasUnreadMessages && (
+                    <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-background" />
+                  )}
                   <span className="sr-only">Toggle Menu</span>
                 </Button>
               </SheetTrigger>
@@ -228,6 +260,25 @@ export function AppHeader() {
                   {navItems.map((item) => (
                     <NavLink key={item.href} {...item} />
                   ))}
+                  <Button
+                    variant="ghost"
+                    asChild
+                    className={cn(
+                      "justify-start text-base font-medium",
+                      pathname === "/messages" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"
+                    )}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                  >
+                    <Link href="/messages" className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-2">
+                        <MessageSquare className="h-5 w-5" />
+                        <span>Messages</span>
+                      </div>
+                      {hasUnreadMessages && (
+                        <span className="h-2 w-2 rounded-full bg-red-500" />
+                      )}
+                    </Link>
+                  </Button>
                 </nav>
               </SheetContent>
             </Sheet>
