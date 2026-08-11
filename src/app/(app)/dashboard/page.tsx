@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { fetchUserProfile, updateAllZeroBalancesToDefault } from '@/lib/profile-service';
 import type { UserProfile } from '@/types/skillswap';
 import { useRouter } from 'next/navigation';
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
@@ -90,8 +91,20 @@ export default function DashboardPage() {
 
   if (profileLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <span className="text-lg">Loading your dashboard...</span>
+      <div className="space-y-8 max-w-7xl mx-auto p-4 md:p-6">
+        <div className="space-y-2">
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-4 w-96" />
+        </div>
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="p-6 border border-border/60 rounded-xl space-y-3 bg-card/40">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-8 w-16" />
+              <Skeleton className="h-3 w-32" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }

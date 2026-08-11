@@ -39,6 +39,7 @@ export function ProfileDisplay({ user, onEdit }: ProfileDisplayProps) {
           .from("listings")
           .select("*")
           .eq("user_id", user.id)
+          .neq("status", "deleted")
           .order("created_at", { ascending: false })
           .limit(3);
 

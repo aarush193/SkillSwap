@@ -39,10 +39,15 @@ export default function ExchangesPage() {
 
   const fetchExchanges = async (userId: string) => {
     try {
-      // Query exchanges where current user is requester or provider
+      // Query exchanges with joined requester profile, provider profile, and listing title
       const { data, error } = await supabase
         .from("exchanges")
-        .select("*")
+        .select(`
+          *,
+          requester:profiles!exchanges_requester_id_fkey(id, name),
+          provider:profiles!exchanges_provider_id_fkey(id, name),
+          listing:listings!exchanges_listing_id_fkey(id, title)
+        `)
         .or(`requester_id.eq.${userId},provider_id.eq.${userId}`)
         .order("created_at", { ascending: false });
 
@@ -56,32 +61,20 @@ export default function ExchangesPage() {
         return;
       }
 
-      const rawExchanges: ExchangeRecord[] = data || [];
+      const rawExchanges = data || [];
 
-      // Fetch profile & listing names to enrich cards
-      const userIds = Array.from(
-        new Set(rawExchanges.flatMap((e) => [e.requester_id, e.provider_id]))
-      );
-      const listingIds = Array.from(new Set(rawExchanges.map((e) => e.listing_id).filter(Boolean)));
+      const enriched = rawExchanges.map((e: any) => {
+        const reqProfile = Array.isArray(e.requester) ? e.requester[0] : e.requester;
+        const provProfile = Array.isArray(e.provider) ? e.provider[0] : e.provider;
+        const lst = Array.isArray(e.listing) ? e.listing[0] : e.listing;
 
-      const [profilesRes, listingsRes] = await Promise.all([
-        userIds.length > 0
-          ? supabase.from("profiles").select("id, name").in("id", userIds)
-          : Promise.resolve({ data: [] }),
-        listingIds.length > 0
-          ? supabase.from("listings").select("id, title").in("id", listingIds)
-          : Promise.resolve({ data: [] }),
-      ]);
-
-      const profileMap = new Map((profilesRes.data || []).map((p) => [p.id, p.name]));
-      const listingMap = new Map((listingsRes.data || []).map((l) => [l.id, l.title]));
-
-      const enriched = rawExchanges.map((e) => ({
-        ...e,
-        requester_name: profileMap.get(e.requester_id) || "Community Member",
-        provider_name: profileMap.get(e.provider_id) || "Community Member",
-        listing_title: listingMap.get(e.listing_id) || "Skill Listing",
-      }));
+        return {
+          ...e,
+          requester_name: reqProfile?.name || "Community Member",
+          provider_name: provProfile?.name || "Community Member",
+          listing_title: lst?.title || "Skill Listing",
+        };
+      });
 
       setExchanges(enriched);
     } catch (err: any) {

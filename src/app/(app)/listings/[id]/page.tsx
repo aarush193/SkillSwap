@@ -108,31 +108,44 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     async function loadData() {
       setLoading(true);
       try {
-        const { data: listingData, error } = await supabase
-          .from("listings")
-          .select("*")
-          .eq("id", listingId)
-          .single();
+        // Parallelize independent operations:
+        // 1. Fetching listing data (and its lister profile)
+        // 2. Fetching currently logged-in user profile
+        const [listingRes, authRes] = await Promise.all([
+          supabase.from("listings").select("*").eq("id", listingId).single(),
+          supabase.auth.getUser(),
+        ]);
 
-        if (error || !listingData) {
-          console.error("Error fetching listing:", error);
+        const listingData = listingRes.data;
+
+        if (listingRes.error || !listingData) {
+          console.error("Error fetching listing:", listingRes.error);
           setListing(null);
         } else {
-          if (listingData.user_id) {
-            const profile = await fetchUserProfile(listingData.user_id);
-            setListerProfile(profile);
-            if (profile) {
-              listingData.user_name = profile.name || listingData.user_name;
-              listingData.user_avatar_url = profile.avatarUrl || listingData.user_avatar_url;
-            }
-          }
           setListing(listingData);
+
+          // Lister profile depends on listingData.user_id
+          if (listingData.user_id) {
+            fetchUserProfile(listingData.user_id).then((listerProfile) => {
+              setListerProfile(listerProfile);
+              if (listerProfile) {
+                setListing((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        user_name: listerProfile.name || prev.user_name,
+                        user_avatar_url: listerProfile.avatarUrl || prev.user_avatar_url,
+                      }
+                    : prev
+                );
+              }
+            });
+          }
         }
 
-        // Fetch current logged-in user profile
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const profile = await fetchUserProfile(user.id);
+        // Fetch current user profile if authenticated
+        if (authRes.data?.user) {
+          const profile = await fetchUserProfile(authRes.data.user.id);
           setCurrentUserProfile(profile);
         }
       } catch (err) {

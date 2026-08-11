@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import { PlusCircle, Search, X, RotateCcw, Sparkles, HelpCircle, Layers, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function ListingsPage() {
   const [listings, setListings] = useState<Listing[]>([]);
@@ -24,7 +25,20 @@ export default function ListingsPage() {
       try {
         const { data, error } = await supabase
           .from("listings")
-          .select("*")
+          .select(`
+            id,
+            user_id,
+            type,
+            title,
+            category,
+            sub_category,
+            skill_names,
+            description,
+            tags,
+            created_at,
+            status,
+            profile:profiles!fk_user(name, avatar_url)
+          `)
           .neq("status", "deleted")
           .order("created_at", { ascending: false });
 
@@ -32,29 +46,15 @@ export default function ListingsPage() {
           console.error("Error fetching listings:", error);
           setListings([]);
         } else {
-          // Batch fetch live profiles for all listing authors
-          const userIds = Array.from(new Set(data.map((item) => item.user_id).filter(Boolean)));
-          
-          if (userIds.length > 0) {
-            const { data: profilesData } = await supabase
-              .from("profiles")
-              .select("id, name, avatar_url")
-              .in("id", userIds);
-
-            const profileMap = new Map((profilesData || []).map((p) => [p.id, p]));
-
-            const enrichedListings = data.map((item) => {
-              const liveProfile = profileMap.get(item.user_id);
-              return {
-                ...item,
-                user_name: liveProfile?.name || item.user_name,
-                user_avatar_url: liveProfile?.avatar_url || item.user_avatar_url,
-              };
-            });
-            setListings(enrichedListings);
-          } else {
-            setListings(data);
-          }
+          const enrichedListings = data.map((item: any) => {
+            const liveProfile = Array.isArray(item.profile) ? item.profile[0] : item.profile;
+            return {
+              ...item,
+              user_name: liveProfile?.name || "Community Member",
+              user_avatar_url: liveProfile?.avatar_url || undefined,
+            };
+          });
+          setListings(enrichedListings);
         }
       } catch (err) {
         console.error("Unexpected error fetching listings:", err);
@@ -241,9 +241,21 @@ export default function ListingsPage() {
 
       {/* Listings Grid or Loading / Empty States */}
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mr-3" />
-          <span className="text-muted-foreground font-medium">Loading community listings...</span>
+        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="border border-border/60 rounded-xl p-5 space-y-4 bg-card/40">
+              <div className="flex items-center justify-between">
+                <Skeleton className="h-5 w-20 rounded-full" />
+                <Skeleton className="h-4 w-16" />
+              </div>
+              <Skeleton className="h-6 w-3/4" />
+              <Skeleton className="h-12 w-full" />
+              <div className="flex items-center gap-2 pt-2">
+                <Skeleton className="h-8 w-8 rounded-full" />
+                <Skeleton className="h-4 w-28" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : filteredListings.length > 0 ? (
         <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
