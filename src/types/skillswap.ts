@@ -8,7 +8,42 @@ export interface UserProfile {
   skillsOffered: Skill[];
   skillsWanted: Skill[];
   timeAvailable?: string; // e.g., "5 hours/week"
-  timeBalance: number; // in minutes or hours
+  timeBalance: number; // in hours
+  reservedHours: number; // in hours
+  availableHours: number; // timeBalance - reservedHours
+}
+
+export type ExchangeStatus = "requested" | "accepted" | "rejected" | "cancelled" | "completed";
+
+export interface ExchangeRecord {
+  id: string;
+  listing_id: string;
+  requester_id: string;
+  provider_id: string;
+  skill_name: string;
+  hours: number;
+  status: ExchangeStatus;
+  requester_confirmed: boolean;
+  provider_confirmed: boolean;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+  // Joined/Populated profile & listing details
+  requester_name?: string;
+  provider_name?: string;
+  listing_title?: string;
+}
+
+export interface TimeLedgerEntry {
+  id: string;
+  exchange_id?: string | null;
+  user_id: string;
+  amount: number;
+  entry_type: "initial_grant" | "exchange_debit" | "exchange_credit";
+  balance_after: number;
+  reserved_after: number;
+  description: string;
+  created_at: string;
 }
 
 export interface Skill {

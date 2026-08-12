@@ -81,24 +81,37 @@ export function ProfileDisplay({ user, onEdit }: ProfileDisplayProps) {
     <div className="space-y-8 max-w-6xl mx-auto">
       {/* 1. Professional Header Section */}
       <div className="relative">
-        <div className="w-full h-44 md:h-56 relative overflow-hidden rounded-xl border border-border/60 shadow-md">
+        <div 
+          onClick={onEdit}
+          title="Click to edit header image"
+          className="w-full h-44 md:h-56 relative overflow-hidden rounded-xl border border-border/60 shadow-md cursor-pointer group"
+        >
           <img
             src={user.backgroundImageUrl || defaultBackgroundImage}
             alt="Profile background"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/40 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/40 to-transparent group-hover:bg-black/20 transition-colors" />
         </div>
 
         <div className="px-6 md:px-8">
           <div className="relative -mt-16 flex flex-col md:flex-row md:items-end justify-between gap-4">
             <div className="flex items-end gap-4">
-              <Avatar className="h-28 w-28 md:h-32 md:w-32 rounded-xl border-4 border-background shadow-xl">
-                <AvatarImage src={user.avatarUrl} alt={user.name} />
-                <AvatarFallback className="text-2xl font-bold">
-                  {user.name.slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
+              <div
+                onClick={onEdit}
+                title="Click to edit profile picture"
+                className="cursor-pointer group relative rounded-xl overflow-hidden ring-2 ring-primary/20 hover:ring-primary transition-all"
+              >
+                <Avatar className="h-28 w-28 md:h-32 md:w-32 rounded-xl border-4 border-background shadow-xl">
+                  <AvatarImage src={user.avatarUrl} alt={user.name} />
+                  <AvatarFallback className="text-2xl font-bold">
+                    {user.name.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-semibold">
+                  <Edit3 className="h-5 w-5" />
+                </div>
+              </div>
 
               <div className="mb-2">
                 <h1 className="text-2xl md:text-3xl font-bold text-foreground">{user.name}</h1>

@@ -1,17 +1,16 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, Briefcase, Clock, Zap } from 'lucide-react';
-import Image from 'next/image';
+import { Users, Briefcase, Clock } from 'lucide-react';
+import { BrandLogo } from '@/components/ui/brand-logo';
 
 export default function LandingPage() {
   return (
     <div className="flex flex-col min-h-screen">
       <header className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50 w-full border-b">
         <div className="container flex h-14 items-center">
-          <Link href="/" className="mr-6 flex items-center space-x-2">
-            <Zap className="h-6 w-6 text-primary" />
-            <span className="font-bold sm:inline-block">SkillSwap</span>
+          <Link href="/" className="mr-6 p-1 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+            <BrandLogo size="md" />
           </Link>
           <nav className="flex flex-1 items-center justify-end space-x-2">
             <Button variant="ghost" asChild>

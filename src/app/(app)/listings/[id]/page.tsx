@@ -36,6 +36,7 @@ import { format } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { fetchUserProfile } from "@/lib/profile-service";
 import { sendMessage } from "@/lib/messages-service";
+import { createExchangeRequest } from "@/lib/exchange-service";
 import { useToast } from "@/hooks/use-toast";
 
 export default function ListingDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -94,7 +95,6 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
   // Proposal modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [offeredSkill, setOfferedSkill] = useState("");
   const [proposedHours, setProposedHours] = useState("1");
   const [proposalMessage, setProposalMessage] = useState("");
   const [submittingProposal, setSubmittingProposal] = useState(false);
@@ -231,63 +231,57 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     setSubmittingProposal(true);
 
     try {
-      const { data: { user }, error: userErr } = await supabase.auth.getUser();
+      const hoursNum = parseFloat(proposedHours) || 1;
 
-      if (userErr || !user) {
+      // 1. Client-side UX balance check
+      if (currentUserProfile && currentUserProfile.availableHours < hoursNum) {
         toast({
-          title: "Authentication Required",
-          description: "Please sign in to propose a skill exchange.",
+          title: "Insufficient Available Balance",
+          description: `You have ${currentUserProfile.availableHours} available hours, but this proposal requires ${hoursNum} hours.`,
           variant: "destructive",
         });
         setSubmittingProposal(false);
         return;
       }
 
-      const senderId = user.id;
-      const senderName = user.user_metadata?.full_name || currentUserProfile?.name || user.email || "Community Member";
-      const receiverId = listing?.user_id;
+      // Automatically derive skill_name from the target listing
+      const derivedSkillName = listing?.title || (listing?.skill_names && listing.skill_names.length > 0 ? listing.skill_names[0] : "Skill Exchange");
 
-      if (!receiverId) {
-        toast({
-          title: "Recipient Error",
-          description: "Could not resolve the listing author.",
-          variant: "destructive",
-        });
-        setSubmittingProposal(false);
-        return;
-      }
-
-      const proposalData = {
-        listing_id: listingId,
-        requester_id: senderId,
-        provider_id: receiverId,
-        skill_name: offeredSkill,
-        hours: parseFloat(proposedHours) || 1,
-        status: "requested",
-        created_at: new Date().toISOString(),
-      };
-
-      const { error } = await supabase.from("exchanges").insert([proposalData]);
+      // 2. Call secure RPC createExchangeRequest
+      const { data, error } = await createExchangeRequest({
+        listingId,
+        skillName: derivedSkillName,
+        hours: hoursNum,
+      });
 
       if (error) {
-        console.error("Error sending proposal:", JSON.stringify(error, null, 2));
         toast({
           title: "Proposal Failed",
-          description: error.message || error.details || "Could not send proposal. Check database schema.",
+          description: error.message,
           variant: "destructive",
         });
       } else {
+        // Optional: If a message note was provided, post it to the direct message thread
+        if (proposalMessage.trim() && currentUserProfile?.id && listing?.user_id) {
+          await sendMessage({
+            senderId: currentUserProfile.id,
+            receiverId: listing.user_id,
+            content: `[Exchange Proposal Note - ${derivedSkillName} (${hoursNum}h)]: ${proposalMessage.trim()}`,
+            listingId: listingId,
+          });
+        }
+
         toast({
           title: "Proposal Sent!",
-          description: `Your skill exchange proposal was sent to ${listing?.user_name || "the lister"}.`,
+          description: `Your skill exchange proposal was sent to ${listing?.user_name || "the teacher"}.`,
         });
         setIsModalOpen(false);
-        setOfferedSkill("");
         setProposedHours("1");
         setProposalMessage("");
+        router.push("/exchanges");
       }
     } catch (err: any) {
-      console.error("Proposal error:", err);
+      console.error("Proposal exception:", err);
       toast({
         title: "Error Sending Proposal",
         description: err.message || "An unexpected error occurred.",
@@ -506,44 +500,49 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                       <form onSubmit={handleSendProposal}>
                         <DialogHeader>
                           <DialogTitle className="flex items-center gap-2">
-                            <Repeat className="h-5 w-5 text-primary" /> Propose Exchange with {listing.user_name}
+                            <Repeat className="h-5 w-5 text-primary" /> Request Session with {listing.user_name}
                           </DialogTitle>
                           <DialogDescription>
-                            Trade time credits for &quot;{listing.title}&quot;.
+                            Use your Time Credits to learn &quot;{listing.title}&quot;.
                           </DialogDescription>
                         </DialogHeader>
 
                         <div className="space-y-4 py-4">
                           <div className="space-y-1.5">
-                            <Label htmlFor="offeredSkill">Skill You Offer in Return*</Label>
-                            <Input
-                              id="offeredSkill"
-                              placeholder="e.g., Python Basics, Graphic Design"
-                              value={offeredSkill}
-                              onChange={(e) => setOfferedSkill(e.target.value)}
-                              required
-                            />
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <Label htmlFor="proposedHours">Hours Proposed*</Label>
+                            <div className="flex items-center justify-between">
+                              <Label htmlFor="proposedHours">Hours Requested*</Label>
+                              {currentUserProfile && (
+                                <span className="text-xs text-muted-foreground">
+                                  Available: <strong className="text-emerald-600 dark:text-emerald-400">{currentUserProfile.availableHours.toFixed(1)} hrs</strong>
+                                </span>
+                              )}
+                            </div>
                             <Input
                               id="proposedHours"
                               type="number"
                               min="0.5"
+                              max="100"
                               step="0.5"
                               placeholder="1.0"
                               value={proposedHours}
                               onChange={(e) => setProposedHours(e.target.value)}
                               required
                             />
+                            {currentUserProfile && parseFloat(proposedHours) > 0 && (
+                              <p className="text-[11px] text-muted-foreground">
+                                Remaining after reservation:{" "}
+                                <span className="font-semibold text-foreground">
+                                  {Math.max(0, currentUserProfile.availableHours - (parseFloat(proposedHours) || 0)).toFixed(1)} hrs available
+                                </span>
+                              </p>
+                            )}
                           </div>
 
                           <div className="space-y-1.5">
-                            <Label htmlFor="proposalMessage">Note to Lister (Optional)</Label>
+                            <Label htmlFor="proposalMessage">Message to Teacher (Optional)</Label>
                             <Textarea
                               id="proposalMessage"
-                              placeholder="Hi! I'd love to exchange skills. Let me know if you're available..."
+                              placeholder="Hi! I'd love to learn this skill. Let me know when you're available..."
                               value={proposalMessage}
                               onChange={(e) => setProposalMessage(e.target.value)}
                               className="min-h-[90px]"

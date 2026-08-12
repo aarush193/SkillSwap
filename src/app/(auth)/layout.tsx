@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Zap } from "lucide-react";
+import { BrandLogo } from "@/components/ui/brand-logo";
 
 export default function AuthLayout({
   children,
@@ -8,9 +8,8 @@ export default function AuthLayout({
 }) {
   return (
     <div className="flex flex-col min-h-screen items-center justify-center bg-gradient-to-br from-primary/10 via-background to-background p-4">
-      <Link href="/" className="mb-8 flex items-center space-x-2 text-2xl font-bold text-primary">
-        <Zap className="h-8 w-8" />
-        <span>SkillSwap</span>
+      <Link href="/" className="mb-8 p-1 rounded-md focus:outline-none focus:ring-2 focus:ring-primary">
+        <BrandLogo variant="full" size="xl" />
       </Link>
       <div className="w-full max-w-md">
         {children}

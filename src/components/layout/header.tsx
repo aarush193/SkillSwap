@@ -21,6 +21,8 @@ import { fetchUserProfile } from "@/lib/profile-service";
 import type { UserProfile } from "@/types/skillswap";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
+import { BrandLogo } from "@/components/ui/brand-logo";
+
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/listings", label: "Listings", icon: List },
@@ -147,9 +149,8 @@ export function AppHeader() {
     <header className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-40 w-full border-b">
       <div className="container flex h-16 items-center justify-between">
         <div className="flex items-center">
-           <Link href="/dashboard" className="mr-6 flex items-center space-x-2">
-            <Zap className="h-6 w-6 text-primary" />
-            <span className="font-bold text-lg">SkillSwap</span>
+           <Link href="/dashboard" className="mr-6 flex items-center space-x-2 focus:outline-none focus:ring-2 focus:ring-primary rounded-md p-1">
+            <BrandLogo size="md" />
           </Link>
           <nav className="hidden md:flex items-center space-x-2 lg:space-x-4">
             {navItems.map((item) => (
@@ -251,9 +252,8 @@ export function AppHeader() {
               </SheetTrigger>
               <SheetContent side="right" className="w-[280px] p-0">
                 <div className="p-4">
-                  <Link href="/dashboard" className="flex items-center space-x-2 mb-6" onClick={() => setIsMobileMenuOpen(false)}>
-                    <Zap className="h-6 w-6 text-primary" />
-                    <span className="font-bold text-lg">SkillSwap</span>
+                  <Link href="/dashboard" className="flex items-center mb-6 p-1 rounded-md focus:outline-none focus:ring-2 focus:ring-primary" onClick={() => setIsMobileMenuOpen(false)}>
+                    <BrandLogo size="md" />
                   </Link>
                 </div>
                 <nav className="flex flex-col space-y-2 px-4">

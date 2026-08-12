@@ -117,10 +117,11 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
       .filter(skill => skill.type === 'wanted')
       .map(skill => ({ id: skill.id, name: skill.name, category: skill.category || lookupCategory(skill.name) }));
     
-    // Ensure timeBalance is a number and has a default value of 12 if it's null/undefined/0
     const timeBalance = typeof profileData.time_balance === 'number' ? profileData.time_balance : 12;
+    const reservedHours = typeof profileData.reserved_hours === 'number' ? profileData.reserved_hours : 0;
+    const availableHours = Math.max(0, timeBalance - reservedHours);
     
-    const userProfile = {
+    const userProfile: UserProfile = {
       id: userId,
       name: profileData.name,
       email: profileData.email,
@@ -130,10 +131,12 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
       skillsOffered,
       skillsWanted,
       timeAvailable: profileData.time_available || '',
-      timeBalance: timeBalance,
+      timeBalance,
+      reservedHours,
+      availableHours,
     };
     
-    console.log("Returning user profile with time balance:", userProfile.timeBalance);
+    console.log("Returning user profile with balance:", timeBalance, "reserved:", reservedHours, "available:", availableHours);
     return userProfile;
   } catch (error: any) {
     const errorMessage = error.message || 'Unknown error during profile fetch';

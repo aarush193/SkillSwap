@@ -288,7 +288,13 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
               </TabsContent>
               <TabsContent value="file">
                 <div className="space-y-2">
-                  <Input type="file" accept="image/*" onChange={handleAvatarFileChange} disabled={isSaving} />
+                  <Input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleAvatarFileChange} 
+                    disabled={isSaving} 
+                    className="cursor-pointer file:cursor-pointer hover:bg-muted/50 transition-colors" 
+                  />
                   {form.watch("avatarUrl") && (
                     <div className="flex items-center gap-3 pt-2">
                       <div className="relative h-12 w-12 overflow-hidden rounded-full border">
@@ -331,7 +337,13 @@ export function EditProfileForm({ user, onSave, onCancel, isSaving, isSuccess }:
               </TabsContent>
               <TabsContent value="file">
                 <div className="space-y-2">
-                  <Input type="file" accept="image/*" onChange={handleBackgroundFileChange} disabled={isSaving} />
+                  <Input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleBackgroundFileChange} 
+                    disabled={isSaving} 
+                    className="cursor-pointer file:cursor-pointer hover:bg-muted/50 transition-colors" 
+                  />
                   {form.watch("backgroundImageUrl") && (
                     <div className="relative h-24 w-full overflow-hidden rounded-lg border mt-2">
                       <img src={form.watch("backgroundImageUrl") || ""} alt="Background preview" className="h-full w-full object-cover" />

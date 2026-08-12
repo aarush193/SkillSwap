@@ -1,88 +1,58 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { fetchUserProfile } from "@/lib/profile-service";
-import type { UserProfile } from "@/types/skillswap";
+import { 
+  fetchUserExchanges, 
+  acceptExchange, 
+  rejectExchange, 
+  cancelExchange, 
+  confirmAndSettleExchange 
+} from "@/lib/exchange-service";
+import type { UserProfile, ExchangeRecord } from "@/types/skillswap";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Repeat, CheckCircle2, XCircle, Clock, Loader2, ArrowUpRight, ArrowDownLeft } from "lucide-react";
+import { Repeat, CheckCircle2, XCircle, Clock, Loader2, ArrowUpRight, ArrowDownLeft, ShieldCheck, Hourglass } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 
-interface ExchangeRecord {
-  id: string;
-  listing_id: string;
-  requester_id: string;
-  provider_id: string;
-  skill_name: string;
-  hours: number;
-  status: "requested" | "accepted" | "cancelled" | "completed";
-  created_at: string;
-  completed_at?: string;
-  // Optional populated profiles
-  requester_name?: string;
-  provider_name?: string;
-  listing_title?: string;
-}
-
 export default function ExchangesPage() {
   const { toast } = useToast();
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [exchanges, setExchanges] = useState<ExchangeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 
-  const fetchExchanges = async (userId: string) => {
+  const loadData = useCallback(async (userId: string) => {
     try {
-      // Query exchanges with joined requester profile, provider profile, and listing title
-      const { data, error } = await supabase
-        .from("exchanges")
-        .select(`
-          *,
-          requester:profiles!exchanges_requester_id_fkey(id, name),
-          provider:profiles!exchanges_provider_id_fkey(id, name),
-          listing:listings!exchanges_listing_id_fkey(id, title)
-        `)
-        .or(`requester_id.eq.${userId},provider_id.eq.${userId}`)
-        .order("created_at", { ascending: false });
+      const [exchangesRes, profileRes] = await Promise.all([
+        fetchUserExchanges(userId),
+        fetchUserProfile(userId),
+      ]);
 
-      if (error) {
-        console.error("Error loading exchanges:", error);
+      if (exchangesRes.error) {
         toast({
           title: "Error Loading Exchanges",
-          description: error.message,
+          description: exchangesRes.error.message,
           variant: "destructive",
         });
-        return;
+      } else {
+        setExchanges(exchangesRes.data);
       }
 
-      const rawExchanges = data || [];
-
-      const enriched = rawExchanges.map((e: any) => {
-        const reqProfile = Array.isArray(e.requester) ? e.requester[0] : e.requester;
-        const provProfile = Array.isArray(e.provider) ? e.provider[0] : e.provider;
-        const lst = Array.isArray(e.listing) ? e.listing[0] : e.listing;
-
-        return {
-          ...e,
-          requester_name: reqProfile?.name || "Community Member",
-          provider_name: provProfile?.name || "Community Member",
-          listing_title: lst?.title || "Skill Listing",
-        };
-      });
-
-      setExchanges(enriched);
+      if (profileRes) {
+        setUserProfile(profileRes);
+      }
     } catch (err: any) {
-      console.error("Unexpected error fetching exchanges:", err);
-    } finally {
-      setLoading(false);
+      console.error("Unexpected error loading exchange dashboard:", err);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     async function init() {
@@ -90,40 +60,106 @@ export default function ExchangesPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUser(user);
-        await fetchExchanges(user.id);
-      } else {
-        setLoading(false);
+        await loadData(user.id);
       }
+      setLoading(false);
     }
     init();
-  }, []);
+  }, [loadData]);
 
-  const handleUpdateStatus = async (exchangeId: string, newStatus: "accepted" | "cancelled") => {
+  // Action 1: Provider Accepts Request
+  const handleAccept = async (exchangeId: string) => {
     setUpdatingId(exchangeId);
     try {
-      const { error } = await supabase
-        .from("exchanges")
-        .update({ status: newStatus })
-        .eq("id", exchangeId);
-
+      const { success, error } = await acceptExchange(exchangeId);
       if (error) {
-        console.error("Failed to update exchange status:", error);
         toast({
-          title: "Update Failed",
-          description: error.message || "Could not update status.",
+          title: "Acceptance Failed",
+          description: error.message,
           variant: "destructive",
         });
       } else {
         toast({
-          title: newStatus === "accepted" ? "Exchange Accepted!" : "Exchange Cancelled",
-          description: `The request status has been updated to ${newStatus}.`,
+          title: "Proposal Accepted!",
+          description: "Hours have been reserved on the requester's profile. You can now coordinate and complete the exchange.",
         });
-        setExchanges((prev) =>
-          prev.map((item) => (item.id === exchangeId ? { ...item, status: newStatus } : item))
-        );
+        if (currentUser) await loadData(currentUser.id);
       }
-    } catch (err: any) {
-      console.error("Error updating status:", err);
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // Action 2: Provider Rejects Request
+  const handleReject = async (exchangeId: string) => {
+    setUpdatingId(exchangeId);
+    try {
+      const { success, error } = await rejectExchange(exchangeId);
+      if (error) {
+        toast({
+          title: "Recline Failed",
+          description: error.message,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Proposal Declined",
+          description: "The exchange request has been marked as declined.",
+        });
+        if (currentUser) await loadData(currentUser.id);
+      }
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // Action 3: Participant Cancels Exchange
+  const handleCancel = async (exchangeId: string) => {
+    setUpdatingId(exchangeId);
+    try {
+      const { success, error } = await cancelExchange(exchangeId);
+      if (error) {
+        toast({
+          title: "Cancellation Failed",
+          description: error.message,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Exchange Cancelled",
+          description: "The exchange has been cancelled and any reserved hours have been released.",
+        });
+        if (currentUser) await loadData(currentUser.id);
+      }
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  // Action 4: Participant Confirms Completion (Two-Party Confirmation)
+  const handleConfirmCompletion = async (exchangeId: string) => {
+    setUpdatingId(exchangeId);
+    try {
+      const { data, error } = await confirmAndSettleExchange(exchangeId);
+      if (error) {
+        toast({
+          title: "Confirmation Failed",
+          description: error.message,
+          variant: "destructive",
+        });
+      } else if (data?.settled) {
+        toast({
+          title: "🎉 Exchange Settled & Completed!",
+          description: "Both participants confirmed! Time Bank hours have been successfully transferred and logged to the ledger.",
+        });
+        if (currentUser) await loadData(currentUser.id);
+      } else {
+        toast({
+          title: "Confirmation Recorded",
+          description: "Your confirmation was recorded. Waiting for your exchange partner to confirm completion.",
+        });
+        if (currentUser) await loadData(currentUser.id);
+      }
     } finally {
       setUpdatingId(null);
     }
@@ -157,17 +193,25 @@ export default function ExchangesPage() {
   const outgoingRequests = exchanges.filter(
     (e) => e.requester_id === currentUser.id && e.status === "requested"
   );
-  const acceptedExchanges = exchanges.filter((e) => e.status === "accepted");
-  const cancelledExchanges = exchanges.filter((e) => e.status === "cancelled");
+  const activeExchanges = exchanges.filter((e) => e.status === "accepted");
+  const completedExchanges = exchanges.filter((e) => e.status === "completed");
+  const historyExchanges = exchanges.filter(
+    (e) => e.status === "completed" || e.status === "rejected" || e.status === "cancelled"
+  );
 
   const renderExchangeCard = (item: ExchangeRecord) => {
     const isProvider = item.provider_id === currentUser.id;
+    const isRequester = item.requester_id === currentUser.id;
     const partnerName = isProvider ? item.requester_name : item.provider_name;
     const isUpdating = updatingId === item.id;
 
+    // Confirmation status flags for accepted state
+    const hasMyConfirmation = isRequester ? item.requester_confirmed : item.provider_confirmed;
+    const hasPartnerConfirmation = isRequester ? item.provider_confirmed : item.requester_confirmed;
+
     return (
       <Card key={item.id} className="border border-border/60 shadow-sm hover:shadow-md transition-shadow">
-        <CardHeader className="pb-3 flex flex-row items-start justify-between gap-4">
+        <CardHeader className="pb-3 flex flex-row items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
           <div className="flex items-center space-x-3">
             <Avatar className="h-10 w-10 border">
               <AvatarImage src={`https://picsum.photos/seed/${partnerName}/50/50`} />
@@ -176,7 +220,7 @@ export default function ExchangesPage() {
               </AvatarFallback>
             </Avatar>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <CardTitle className="text-base font-bold">
                   {isProvider ? `From: ${partnerName}` : `To: ${partnerName}`}
                 </CardTitle>
@@ -200,86 +244,195 @@ export default function ExchangesPage() {
 
           <Badge
             variant={
-              item.status === "accepted"
+              item.status === "completed"
                 ? "default"
-                : item.status === "cancelled"
+                : item.status === "accepted"
+                ? "secondary"
+                : item.status === "cancelled" || item.status === "rejected"
                 ? "destructive"
-                : "secondary"
+                : "outline"
             }
-            className="capitalize text-xs font-semibold px-2.5 py-0.5"
+            className="capitalize text-xs font-semibold px-2.5 py-0.5 shrink-0"
           >
             {item.status}
           </Badge>
         </CardHeader>
 
         <CardContent className="space-y-2 py-2">
-          <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-xs space-y-1">
-            <p>
-              <span className="font-semibold text-foreground">Skill Requested / Offered:</span> {item.skill_name}
-            </p>
-            <p>
-              <span className="font-semibold text-foreground">Proposed Hours:</span> {item.hours} hrs
-            </p>
+          <div className="p-3 rounded-lg bg-muted/40 border border-border/50 text-xs space-y-1.5">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p>
+                <span className="font-semibold text-foreground">Target Skill:</span> {item.skill_name}
+              </p>
+              <Badge variant="outline" className="text-xs font-bold bg-primary/10 text-primary border-primary/20">
+                {item.hours} hrs requested
+              </Badge>
+            </div>
+
+            {/* Reserved Hours indicator for Requester in accepted state */}
+            {item.status === "accepted" && isRequester && (
+              <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 pt-1 font-medium text-[11px]">
+                <Hourglass className="h-3.5 w-3.5 shrink-0" />
+                {item.hours} hours are currently reserved from your available balance.
+              </div>
+            )}
+
+            {/* Confirmation status indicator for accepted state */}
+            {item.status === "accepted" && (
+              <div className="pt-2 border-t border-border/40 space-y-1 text-[11px]">
+                <p className="font-semibold text-foreground">Completion Confirmations:</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex items-center gap-1.5">
+                    {hasMyConfirmation ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                    ) : (
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    )}
+                    <span>You: {hasMyConfirmation ? "Confirmed" : "Pending"}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {hasPartnerConfirmation ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                    ) : (
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    )}
+                    <span>Partner: {hasPartnerConfirmation ? "Confirmed" : "Pending"}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <p className="text-[11px] text-muted-foreground pt-1">
               Requested {item.created_at ? formatDistanceToNow(new Date(item.created_at), { addSuffix: true }) : "recently"}
+              {item.completed_at && ` • Completed ${formatDistanceToNow(new Date(item.completed_at), { addSuffix: true })}`}
             </p>
           </div>
         </CardContent>
 
-        {/* Action Controls for Provider */}
-        {isProvider && item.status === "requested" && (
-          <CardFooter className="pt-2 border-t border-border/40 flex items-center justify-end gap-2">
+        {/* Action Footer Controls */}
+        <CardFooter className="pt-2 border-t border-border/40 flex items-center justify-end gap-2 flex-wrap">
+          {/* Requested State Actions */}
+          {item.status === "requested" && isProvider && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs text-destructive hover:bg-destructive/10"
+                onClick={() => handleReject(item.id)}
+                disabled={isUpdating}
+              >
+                {isUpdating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <XCircle className="mr-1.5 h-3.5 w-3.5" />}
+                Decline
+              </Button>
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
+                onClick={() => handleAccept(item.id)}
+                disabled={isUpdating}
+              >
+                {isUpdating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />}
+                Accept Proposal
+              </Button>
+            </>
+          )}
+
+          {item.status === "requested" && isRequester && (
             <Button
               size="sm"
               variant="outline"
               className="text-xs text-destructive hover:bg-destructive/10"
-              onClick={() => handleUpdateStatus(item.id, "cancelled")}
+              onClick={() => handleCancel(item.id)}
               disabled={isUpdating}
             >
-              <XCircle className="mr-1.5 h-3.5 w-3.5" /> Decline
+              {isUpdating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <XCircle className="mr-1.5 h-3.5 w-3.5" />}
+              Cancel Request
             </Button>
-            <Button
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs"
-              onClick={() => handleUpdateStatus(item.id, "accepted")}
-              disabled={isUpdating}
-            >
-              {isUpdating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />}
-              Accept Proposal
-            </Button>
-          </CardFooter>
-        )}
+          )}
+
+          {/* Active (Accepted) State Actions */}
+          {item.status === "accepted" && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => handleCancel(item.id)}
+                disabled={isUpdating}
+              >
+                {isUpdating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <XCircle className="mr-1.5 h-3.5 w-3.5" />}
+                Cancel Exchange
+              </Button>
+
+              <Button
+                size="sm"
+                className={hasMyConfirmation ? "bg-muted text-muted-foreground text-xs" : "bg-primary text-primary-foreground text-xs font-semibold"}
+                onClick={() => handleConfirmCompletion(item.id)}
+                disabled={isUpdating || hasMyConfirmation}
+              >
+                {isUpdating ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ShieldCheck className="mr-1.5 h-3.5 w-3.5 text-emerald-400" />
+                )}
+                {hasMyConfirmation ? "Confirmed (Waiting Partner)" : "Confirm Completion"}
+              </Button>
+            </>
+          )}
+        </CardFooter>
       </Card>
     );
   };
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
-      {/* Header */}
+      {/* Header with Live Time Bank Summary */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border/60 pb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground flex items-center gap-2">
             <Repeat className="h-8 w-8 text-primary" /> Skill Exchanges
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage your incoming and outgoing skill exchange agreements.
+            Manage your incoming requests, sent proposals, and active skill agreements.
           </p>
         </div>
+
+        {/* Live Balance Card Header Widget */}
+        {userProfile && (
+          <div className="p-3 bg-muted/60 border border-border/80 rounded-xl flex items-center gap-4 text-xs">
+            <div>
+              <p className="text-muted-foreground font-medium">Total Balance</p>
+              <p className="text-base font-bold text-foreground">{userProfile.timeBalance.toFixed(1)} hrs</p>
+            </div>
+            <div className="h-8 w-[1px] bg-border/80" />
+            <div>
+              <p className="text-muted-foreground font-medium">Reserved</p>
+              <p className="text-base font-bold text-amber-600 dark:text-amber-400">{userProfile.reservedHours.toFixed(1)} hrs</p>
+            </div>
+            <div className="h-8 w-[1px] bg-border/80" />
+            <div>
+              <p className="text-muted-foreground font-medium">Available</p>
+              <p className="text-base font-bold text-emerald-600 dark:text-emerald-400">{userProfile.availableHours.toFixed(1)} hrs</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <Tabs defaultValue="incoming" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 h-10">
+        <TabsList className="grid w-full grid-cols-5 h-10">
           <TabsTrigger value="incoming" className="py-2 text-xs font-medium">
             Incoming ({incomingRequests.length})
           </TabsTrigger>
           <TabsTrigger value="sent" className="py-2 text-xs font-medium">
             Sent ({outgoingRequests.length})
           </TabsTrigger>
-          <TabsTrigger value="accepted" className="py-2 text-xs font-medium">
-            Accepted ({acceptedExchanges.length})
+          <TabsTrigger value="active" className="py-2 text-xs font-medium">
+            Active ({activeExchanges.length})
           </TabsTrigger>
-          <TabsTrigger value="cancelled" className="py-2 text-xs font-medium">
-            Declined ({cancelledExchanges.length})
+          <TabsTrigger value="completed" className="py-2 text-xs font-medium">
+            Completed ({completedExchanges.length})
+          </TabsTrigger>
+          <TabsTrigger value="history" className="py-2 text-xs font-medium">
+            History ({historyExchanges.length})
           </TabsTrigger>
         </TabsList>
 
@@ -308,23 +461,34 @@ export default function ExchangesPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="accepted" className="space-y-4">
-          {acceptedExchanges.length > 0 ? (
-            acceptedExchanges.map(renderExchangeCard)
+        <TabsContent value="active" className="space-y-4">
+          {activeExchanges.length > 0 ? (
+            activeExchanges.map(renderExchangeCard)
           ) : (
             <div className="text-center py-12 px-4 border border-dashed border-border/80 rounded-xl bg-card/40 space-y-2">
-              <p className="text-sm font-semibold text-foreground">No Accepted Exchanges Yet</p>
-              <p className="text-xs text-muted-foreground">Confirmed skill exchange agreements will be listed here.</p>
+              <p className="text-sm font-semibold text-foreground">No Active Exchanges</p>
+              <p className="text-xs text-muted-foreground">Accepted skill exchange agreements undergoing work will appear here.</p>
             </div>
           )}
         </TabsContent>
 
-        <TabsContent value="cancelled" className="space-y-4">
-          {cancelledExchanges.length > 0 ? (
-            cancelledExchanges.map(renderExchangeCard)
+        <TabsContent value="completed" className="space-y-4">
+          {completedExchanges.length > 0 ? (
+            completedExchanges.map(renderExchangeCard)
           ) : (
             <div className="text-center py-12 px-4 border border-dashed border-border/80 rounded-xl bg-card/40 space-y-2">
-              <p className="text-sm font-semibold text-foreground">No Declined Requests</p>
+              <p className="text-sm font-semibold text-foreground">No Completed Exchanges Yet</p>
+              <p className="text-xs text-muted-foreground">Verified & settled skill exchange agreements will be listed here.</p>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="history" className="space-y-4">
+          {historyExchanges.length > 0 ? (
+            historyExchanges.map(renderExchangeCard)
+          ) : (
+            <div className="text-center py-12 px-4 border border-dashed border-border/80 rounded-xl bg-card/40 space-y-2">
+              <p className="text-sm font-semibold text-foreground">No Cancelled / Declined Requests</p>
               <p className="text-xs text-muted-foreground">Declined or cancelled requests will appear here.</p>
             </div>
           )}
