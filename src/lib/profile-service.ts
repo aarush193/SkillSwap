@@ -77,6 +77,11 @@ export async function fetchUserProfile(userId: string): Promise<UserProfile | nu
         console.log("No profile found for user:", userId);
         return null; // Profile not found, return null gracefully
       }
+      if (profileError.code === 'PGRST303') {
+        console.warn("Supabase JWT issued in future (PGRST303). Clearing stale authentication session...");
+        await supabase.auth.signOut();
+        return null;
+      }
       console.error('Supabase error fetching profile:', JSON.stringify(profileError, null, 2));
       throw new Error(`Error fetching profile data: ${profileError.message}`);
     }

@@ -15,6 +15,22 @@ export interface UserProfile {
 
 export type ExchangeStatus = "requested" | "accepted" | "rejected" | "cancelled" | "completed";
 
+export type SessionStatus = "scheduled" | "completed" | "cancelled";
+
+export interface SessionRecord {
+  id: string;
+  exchange_id: string;
+  teacher_id: string;
+  learner_id: string;
+  scheduled_date: string; // YYYY-MM-DD
+  scheduled_time: string; // HH:mm or HH:mm:ss
+  meeting_link: string | null;
+  timezone?: string;
+  status: SessionStatus;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ExchangeRecord {
   id: string;
   listing_id: string;
@@ -32,6 +48,7 @@ export interface ExchangeRecord {
   requester_name?: string;
   provider_name?: string;
   listing_title?: string;
+  session?: SessionRecord | null;
 }
 
 export interface TimeLedgerEntry {

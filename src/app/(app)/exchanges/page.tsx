@@ -10,14 +10,16 @@ import {
   cancelExchange, 
   confirmAndSettleExchange 
 } from "@/lib/exchange-service";
+import { fetchSessionsForExchanges, updateSessionStatus } from "@/lib/session-service";
+import { SessionDialog } from "@/components/sessions/session-dialog";
 import type { UserProfile, ExchangeRecord } from "@/types/skillswap";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Repeat, CheckCircle2, XCircle, Clock, Loader2, ArrowUpRight, ArrowDownLeft, ShieldCheck, Hourglass } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { Repeat, CheckCircle2, XCircle, Clock, Loader2, ArrowUpRight, ArrowDownLeft, ShieldCheck, Hourglass, Calendar, Video, ExternalLink, Edit3 } from "lucide-react";
+import { formatDistanceToNow, format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import Link from "next/link";
 
@@ -28,6 +30,10 @@ export default function ExchangesPage() {
   const [exchanges, setExchanges] = useState<ExchangeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // Session dialog state
+  const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
+  const [selectedExchangeForSession, setSelectedExchangeForSession] = useState<ExchangeRecord | null>(null);
 
   const loadData = useCallback(async (userId: string) => {
     try {
@@ -43,7 +49,18 @@ export default function ExchangesPage() {
           variant: "destructive",
         });
       } else {
-        setExchanges(exchangesRes.data);
+        const rawExchanges = exchangesRes.data || [];
+        if (rawExchanges.length > 0) {
+          const exchangeIds = rawExchanges.map((e) => e.id);
+          const sessionMap = await fetchSessionsForExchanges(exchangeIds);
+          const enriched = rawExchanges.map((e) => ({
+            ...e,
+            session: sessionMap[e.id] || null,
+          }));
+          setExchanges(enriched);
+        } else {
+          setExchanges([]);
+        }
       }
 
       if (profileRes) {
@@ -117,6 +134,7 @@ export default function ExchangesPage() {
   const handleCancel = async (exchangeId: string) => {
     setUpdatingId(exchangeId);
     try {
+      const targetExchange = exchanges.find((e) => e.id === exchangeId);
       const { success, error } = await cancelExchange(exchangeId);
       if (error) {
         toast({
@@ -125,6 +143,9 @@ export default function ExchangesPage() {
           variant: "destructive",
         });
       } else {
+        if (targetExchange?.session?.id) {
+          await updateSessionStatus(targetExchange.session.id, "cancelled");
+        }
         toast({
           title: "Exchange Cancelled",
           description: "The exchange has been cancelled and any reserved hours have been released.",
@@ -136,10 +157,11 @@ export default function ExchangesPage() {
     }
   };
 
-  // Action 4: Participant Confirms Completion (Two-Party Confirmation)
+  // Action 4: Participant Confirms Completion (Two-Party Confirmation & Time Bank Settlement)
   const handleConfirmCompletion = async (exchangeId: string) => {
     setUpdatingId(exchangeId);
     try {
+      const targetExchange = exchanges.find((e) => e.id === exchangeId);
       const { data, error } = await confirmAndSettleExchange(exchangeId);
       if (error) {
         toast({
@@ -148,6 +170,9 @@ export default function ExchangesPage() {
           variant: "destructive",
         });
       } else if (data?.settled) {
+        if (targetExchange?.session?.id) {
+          await updateSessionStatus(targetExchange.session.id, "completed");
+        }
         toast({
           title: "🎉 Exchange Settled & Completed!",
           description: "Both participants confirmed! Time Bank hours have been successfully transferred and logged to the ledger.",
@@ -163,6 +188,11 @@ export default function ExchangesPage() {
     } finally {
       setUpdatingId(null);
     }
+  };
+
+  const openScheduleModal = (item: ExchangeRecord) => {
+    setSelectedExchangeForSession(item);
+    setSessionDialogOpen(true);
   };
 
   if (loading) {
@@ -276,6 +306,87 @@ export default function ExchangesPage() {
                 {item.hours} hours are currently reserved from your available balance.
               </div>
             )}
+
+            {/* Session Information & Management Block */}
+            {item.session ? (
+              <div className="pt-2.5 border-t border-border/40 space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5 font-semibold text-foreground text-xs">
+                    <Video className="h-4 w-4 text-primary" />
+                    <span>Scheduled Session</span>
+                  </div>
+                  <Badge
+                    variant={
+                      item.session.status === "completed"
+                        ? "default"
+                        : item.session.status === "cancelled"
+                        ? "destructive"
+                        : "secondary"
+                    }
+                    className="text-[10px] capitalize px-2 py-0.5"
+                  >
+                    {item.session.status}
+                  </Badge>
+                </div>
+
+                <div className="p-2.5 rounded-md bg-background/80 border border-border/60 flex items-center justify-between flex-wrap gap-3">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2 text-xs font-medium text-foreground">
+                      <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span>{item.session.scheduled_date}</span>
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground ml-1" />
+                      <span>{item.session.scheduled_time?.substring(0, 5)}</span>
+                    </div>
+                    {item.status === "accepted" && item.session.status === "scheduled" && item.session.meeting_link && (
+                      <p className="text-[11px] text-muted-foreground truncate max-w-[280px]">
+                        Link: <span className="font-mono">{item.session.meeting_link}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {item.status === "accepted" && item.session.status === "scheduled" && item.session.meeting_link && (
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => openScheduleModal(item)}
+                      >
+                        <Edit3 className="h-3.5 w-3.5 mr-1" /> Edit Link
+                      </Button>
+                      <Button
+                        size="sm"
+                        className="h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-sm"
+                        asChild
+                      >
+                        <a href={item.session.meeting_link} target="_blank" rel="noopener noreferrer">
+                          <Video className="h-3.5 w-3.5 mr-1.5" /> Join Session <ExternalLink className="h-3 w-3 ml-1" />
+                        </a>
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : item.status === "accepted" ? (
+              <div className="pt-2 border-t border-border/40 flex items-center justify-between gap-3 p-2.5 rounded-md bg-primary/5 border border-primary/10">
+                <div className="space-y-0.5">
+                  <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <Video className="h-4 w-4 text-primary" /> No Session Scheduled
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Schedule a date, time, and meeting link (Zoom, Meet, Discord) to begin learning.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="default"
+                  className="text-xs shrink-0 font-semibold"
+                  onClick={() => openScheduleModal(item)}
+                >
+                  <Calendar className="h-3.5 w-3.5 mr-1.5" /> Schedule Session
+                </Button>
+              </div>
+            ) : null}
 
             {/* Confirmation status indicator for accepted state */}
             {item.status === "accepted" && (
@@ -494,6 +605,17 @@ export default function ExchangesPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Session Dialog Modal */}
+      <SessionDialog
+        open={sessionDialogOpen}
+        onOpenChange={setSessionDialogOpen}
+        exchange={selectedExchangeForSession}
+        currentUserId={currentUser?.id || ""}
+        onSessionSaved={() => {
+          if (currentUser?.id) loadData(currentUser.id);
+        }}
+      />
     </div>
   );
 }

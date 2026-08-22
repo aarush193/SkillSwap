@@ -31,6 +31,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "../../lib/supabase";
 import { fetchUserProfile } from "@/lib/profile-service";
+import { createListing } from "@/lib/listing-service";
+import { validateListingContent } from "@/lib/moderation";
 import { useToast } from "@/hooks/use-toast";
 import { clsx } from "clsx";
 import Link from "next/link";
@@ -43,6 +45,8 @@ const skillsData = [
       { name: "Mobile Development", skills: ["iOS (Swift)", "Android (Kotlin)", "React Native", "Flutter", "Mobile UI/UX", "Xamarin"] },
       { name: "Data Science", skills: ["Machine Learning", "Data Analysis", "Big Data", "AI Engineering", "NLP", "Deep Learning"] },
       { name: "Cloud Computing", skills: ["AWS", "Azure", "Google Cloud", "Serverless Arch.", "Kubernetes"] },
+      { name: "Design", skills: ["Graphic Design", "UI/UX Design", "Illustration", "3D Modeling", "Brand Identity", "Logo Design"] },
+      { name: "Multimedia", skills: ["Video Editing", "Animation", "Photography", "Music Production", "Motion Graphics"] },
     ],
   },
   {
@@ -73,7 +77,19 @@ const listingFormSchema = z.object({
     .max(5, { message: "You can select at most 5 skills." }),
   description: z.string().min(10, { message: "Description must be at least 10 characters." }).max(500, { message: "Description must not exceed 500 characters." }),
   tags: z.string().optional(), 
-});
+}).refine(
+  (data) => validateListingContent(data.title, "").isValid,
+  {
+    message: "Please use an appropriate title.",
+    path: ["title"],
+  }
+).refine(
+  (data) => validateListingContent("", data.description).isValid,
+  {
+    message: "Please use an appropriate description.",
+    path: ["description"],
+  }
+);
 
 type ListingFormValues = z.infer<typeof listingFormSchema>;
 
@@ -81,8 +97,6 @@ export function CreateListingForm() {
   const { toast } = useToast();
   const form = useForm<ListingFormValues>({
     resolver: zodResolver(listingFormSchema),
-    mode: "onSubmit",
-    reValidateMode: "onSubmit",
     defaultValues: {
       type: "offered",
       title: "",
@@ -94,29 +108,26 @@ export function CreateListingForm() {
     },
   });
 
-  const [selectedCategoryName, setSelectedCategoryName] = React.useState<string>("");
-  const [selectedSubCategoryName, setSelectedSubCategoryName] = React.useState<string>("");
-  
-  const [availableSubCategories, setAvailableSubCategories] = React.useState<{name: string; skills: string[]}[]>([]);
-  const [availableSkills, setAvailableSkills] = React.useState<string[]>([]);
+  const selectedCategory = form.watch("category");
+  const selectedSubCategory = form.watch("subCategory");
 
-  const handleCategoryChange = (categoryName: string) => {
-    setSelectedCategoryName(categoryName);
-    const category = skillsData.find(c => c.name === categoryName);
-    setAvailableSubCategories(category ? category.subCategories : []);
-    setSelectedSubCategoryName("");
-    setAvailableSkills([]);
-    form.setValue("category", categoryName, { shouldValidate: false });
-    form.setValue("subCategory", "", { shouldValidate: false });
+  const currentCategoryData = skillsData.find((c) => c.name === selectedCategory);
+  const availableSubCategories = currentCategoryData?.subCategories || [];
+  const currentSubCategoryData = currentCategoryData?.subCategories.find(
+    (sc) => sc.name === selectedSubCategory
+  );
+
+  const availableSkills = currentSubCategoryData?.skills || [];
+
+  const handleCategoryChange = (val: string) => {
+    form.setValue("category", val);
+    form.setValue("subCategory", "", { shouldValidate: true });
     form.setValue("skillName", [], { shouldValidate: false });
     form.clearErrors();
   };
 
-  const handleSubCategoryChange = (subCategoryName: string) => {
-    setSelectedSubCategoryName(subCategoryName);
-    const subCategory = availableSubCategories.find(sc => sc.name === subCategoryName);
-    setAvailableSkills(subCategory ? subCategory.skills : []);
-    form.setValue("subCategory", subCategoryName, { shouldValidate: false });
+  const handleSubCategoryChange = (val: string) => {
+    form.setValue("subCategory", val);
     form.setValue("skillName", [], { shouldValidate: false });
     form.clearErrors();
   };
@@ -128,6 +139,17 @@ export function CreateListingForm() {
         toast({
           title: "Authentication Error",
           description: "You must be logged in to create a listing.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Frontend content moderation check
+      const moderation = validateListingContent(values.title, values.description);
+      if (!moderation.isValid) {
+        toast({
+          title: "Inappropriate Content",
+          description: moderation.error || "Please use an appropriate title and description.",
           variant: "destructive",
         });
         return;
@@ -146,10 +168,10 @@ export function CreateListingForm() {
         skill_names: values.skillName, // array of selected skills
         description: values.description,
         tags: values.tags?.split(',').map(tag => tag.trim()).filter(tag => tag) || [],
-        status: 'open'
+        status: 'open' as const
       };
 
-      const { error: insertError } = await supabase.from("listings").insert([listingToInsert]);
+      const { error: insertError } = await createListing(listingToInsert);
 
       if (insertError) {
         toast({
@@ -163,10 +185,6 @@ export function CreateListingForm() {
           description: "Successfully created the listing.",
         });
         form.reset();
-        setSelectedCategoryName("");
-        setSelectedSubCategoryName("");
-        setAvailableSubCategories([]);
-        setAvailableSkills([]);
         window.location.href = "/listings";
       }
     } catch (error) {
@@ -286,7 +304,7 @@ export function CreateListingForm() {
                       handleSubCategoryChange(val);
                     }}
                     value={field.value || ""}
-                    disabled={!selectedCategoryName || availableSubCategories.length === 0}
+                    disabled={!selectedCategory || availableSubCategories.length === 0}
                   >
                     <FormControl>
                       <SelectTrigger suppressHydrationWarning={true}>
